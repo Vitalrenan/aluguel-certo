@@ -26,7 +26,11 @@ REGIAO="${REGIAO:-southamerica-east1}"
 BUCKET="${BUCKET:-dataacquisition}"
 PREFIXO="${PREFIXO:-refatoramento}"
 REPO="${REPO:-aluguel-certo}"
-CONTA="${CONTA:-aluguelcerto-run@${PROJETO}.iam.gserviceaccount.com}"
+# Duas identidades, criadas por `criar-contas.sh`. Os jobs escrevem no lago e a
+# API só lê -- separar isso na identidade, e não só no `readonly` do volume, é o
+# que impede a API de sobrescrever a camada que ela deveria apenas servir.
+SA_JOBS="${SA_JOBS:-aluguelcerto-jobs@${PROJETO}.iam.gserviceaccount.com}"
+SA_API="${SA_API:-aluguelcerto-api@${PROJETO}.iam.gserviceaccount.com}"
 
 IMG="${REGIAO}-docker.pkg.dev/${PROJETO}/${REPO}"
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -34,10 +38,23 @@ MONTE="/lago-bucket"
 
 # ---------------------------------------------------------------------------
 
+confere_contas() {
+  # As contas têm de existir ANTES do deploy. O Cloud Run aceita
+  # `--service-account` apontando para conta inexistente e só falha no primeiro
+  # arranque, o que aparece como erro de execução e não de configuração.
+  local faltando=0
+  for sa in "${SA_JOBS}" "${SA_API}"; do
+    gcloud iam service-accounts describe "${sa}" >/dev/null 2>&1 \
+      || { echo "FALTA a conta ${sa}"; faltando=1; }
+  done
+  [ "${faltando}" -eq 0 ] || { echo "Rode ./criar-contas.sh primeiro."; exit 1; }
+}
+
 preparar() {
   gcloud config set project "${PROJETO}" >/dev/null
   gcloud services enable run.googleapis.com artifactregistry.googleapis.com \
       cloudbuild.googleapis.com --project "${PROJETO}"
+  confere_contas
 
   gcloud artifacts repositories describe "${REPO}" --location "${REGIAO}" >/dev/null 2>&1 \
     || gcloud artifacts repositories create "${REPO}" \
@@ -63,7 +80,7 @@ api() {
   gcloud run deploy aluguel-certo-api \
     --image "${IMG}/api:latest" \
     --region "${REGIAO}" \
-    --service-account "${CONTA}" \
+    --service-account "${SA_API}" \
     --add-volume "name=lago,type=cloud-storage,bucket=${BUCKET},readonly=true" \
     --add-volume-mount "volume=lago,mount-path=${MONTE}" \
     --set-env-vars "ALUGUELCERTO_REFINED=${MONTE}/${PREFIXO}/03_refined,ALUGUELCERTO_MODELOS=${MONTE}/${PREFIXO}/modelos" \
@@ -111,7 +128,7 @@ publica_job() {
   gcloud run jobs deploy "aluguel-certo-${nome}" \
     --image "${IMG}/engenharia:latest" \
     --region "${REGIAO}" \
-    --service-account "${CONTA}" \
+    --service-account "${SA_JOBS}" \
     --add-volume "name=lago,type=cloud-storage,bucket=${BUCKET}" \
     --add-volume-mount "volume=lago,mount-path=${MONTE}" \
     --set-env-vars "ALUGUELCERTO_LAGO=${MONTE}/${PREFIXO}" \
