@@ -21,6 +21,14 @@
 
 set -euo pipefail
 
+# O Git Bash no Windows reescreve argumento que PARECE caminho absoluto: passar
+# `/lago-bucket` chega ao gcloud como `C:/Program Files/Git/lago-bucket`, e o
+# Cloud Run recusa com "should be a valid unix absolute path" -- mensagem que
+# acusa o valor e não quem o alterou. Sem isto o deploy falha só no Windows, o
+# que faz o mesmo script funcionar num lugar e não no outro.
+export MSYS_NO_PATHCONV=1
+export MSYS2_ARG_CONV_EXCL='*'
+
 PROJETO="${PROJETO:-aluguelcerto}"
 REGIAO="${REGIAO:-southamerica-east1}"
 BUCKET="${BUCKET:-dataacquisition}"

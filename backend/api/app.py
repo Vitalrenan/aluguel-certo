@@ -62,6 +62,30 @@ app.add_middleware(
     max_age=600)
 
 
+@app.get("/")
+def indice() -> dict:
+    """
+    O que existe neste serviço.
+
+    Sem esta rota a raiz devolve `{"detail":"Not Found"}` -- tecnicamente
+    correto e inútil para quem abriu a URL para ver o que há. Quem chega aqui
+    está descobrindo o serviço, não consumindo dado, e merece um mapa.
+    """
+    return {
+        "servico": "Aluguel Certo — estimativa de preço de imóvel",
+        "documentacao": "/docs",
+        "rotas": {
+            "GET /cidades": "pares cidade × transação, com disponibilidade e motivo",
+            "POST /estimativa": "a estimativa; par sem modelo responde 422 com o motivo",
+            "GET /mercado": "indicadores por cidade",
+            "GET /bairros/indicadores": "indicadores por bairro",
+            "GET /modelo/card": "o model card do par (cidade, alvo)",
+            "GET /saude": "o processo está de pé",
+            "GET /pronto": "a camada refinada existe e um modelo carrega",
+        },
+    }
+
+
 # --------------------------------------------------------------------------
 # disponibilidade
 # --------------------------------------------------------------------------
@@ -220,11 +244,29 @@ def pronto(resposta: Response) -> dict:
     if not (REFINED / "mercado").exists():
         problemas.append("camada refinada ausente: mercado/")
 
+    primeiro = True
     for p in resolucao.catalogo(str(CIDADES)):
         if not p.disponivel:
             continue
-        if resolucao.pasta_do_modelo(MODELOS, p.cidade, p.alvo) is None:
+        pasta = resolucao.pasta_do_modelo(MODELOS, p.cidade, p.alvo)
+        if pasta is None:
             problemas.append(f"sem modelo para {p.cidade}/{p.alvo}")
+            continue
+
+        # CARREGA UM MODELO DE VERDADE, uma vez. Conferir que o diretório
+        # existe não prova que ele abre: `libgomp1` faltava na imagem e o
+        # LightGBM só é importado quando o primeiro booster é carregado, então
+        # `/pronto` respondia 200 enquanto toda estimativa devolvia 500. Uma
+        # prontidão que não exercita o caminho que serve não está verificando
+        # prontidão nenhuma.
+        if primeiro:
+            primeiro = False
+            try:
+                A.carrega(pasta)
+            except Exception as exc:
+                problemas.append(
+                    f"modelo de {p.cidade}/{p.alvo} nao carrega: "
+                    f"{type(exc).__name__}: {exc}")
 
     if problemas:
         resposta.status_code = 503

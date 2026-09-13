@@ -1,0 +1,12 @@
+# O que NAO vai para o Cloud Build.
+#
+# O lago e os modelos chegam por volume do bucket, nao pela imagem. Mandar 326
+# MB a cada build pagaria transferencia e tempo para embutir dado que o
+# contêiner nem le -- e faria o modelo servido ser o do dia do build.
+engenharia/dados/
+engenharia/modelos/
+frontend/node_modules/
+frontend/.next/
+**/__pycache__/
+**/*.pyc
+.git/

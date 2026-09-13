@@ -10,15 +10,32 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
+# libgomp: o runtime de OpenMP que o LightGBM carrega. A imagem `slim` não o
+# traz, e a falta dele NÃO aparece no build nem no arranque -- `import lightgbm`
+# só acontece quando o primeiro pedido carrega um booster. O sintoma foi 500 na
+# estimativa com `/saude` e `/pronto` respondendo 200.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libgomp1 \
+ && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # A engenharia entra como BIBLIOTECA, não como cópia. O serviço não pode
 # reimplementar feature: recalcular `area_por_quarto` com outro tratamento de
 # divisão por zero devolve previsão plausível e errada, sem exceção.
-COPY engenharia/pyproject.toml /app/engenharia/pyproject.toml
-COPY engenharia/comum /app/engenharia/comum
-COPY engenharia/config /app/engenharia/config
-RUN pip install -e /app/engenharia
+#
+# COPIA O PACOTE INTEIRO, embora a API só importe de `comum`. Copiar metade
+# quebrava o build: o `pyproject.toml` declara os nove pacotes e o pip parava
+# em `package directory 'coleta' does not exist`.
+#
+# A alternativa seria fazer o pyproject descobrir os pacotes presentes, e ela é
+# pior: a mesma declaração instalaria coisas diferentes conforme o contexto, e
+# um diretório esquecido viraria uma instalação menor sem ninguém notar. O que
+# pesava nesta imagem era o Chrome, que continua fora; o código-fonte das
+# outras etapas é texto e não muda a ordem de grandeza.
+COPY engenharia /app/engenharia
+RUN rm -rf /app/engenharia/dados /app/engenharia/modelos /app/engenharia/tests \
+ && pip install -e /app/engenharia
 
 COPY backend/requirements.txt /app/backend/requirements.txt
 RUN pip install -r /app/backend/requirements.txt
