@@ -1,0 +1,48 @@
+# ---------------------------------------------------------------------------
+# DADOS. Nada do lago vai para o GitHub.
+#
+# Não é só tamanho. A camada crua guarda anúncio coletado, e o portão de PII
+# roda na ingestão -- mas o repositório não é o lugar de testar essa garantia.
+# O lago vive no Cloud Storage; o GitHub guarda o código que o produz.
+# ---------------------------------------------------------------------------
+engenharia/dados/
+engenharia/modelos/
+*.parquet
+*.csv
+*.xlsx
+*.zip
+
+# Credenciais. Nunca, em hipótese alguma.
+**/credentials/
+*_cred.json
+*-key.json
+service-account*.json
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# ---------------------------------------------------------------------------
+# Node e Next
+# ---------------------------------------------------------------------------
+node_modules/
+.next/
+out/
+.env*.local
+*.tsbuildinfo
+next-env.d.ts
+
+# ---------------------------------------------------------------------------
+# Sistema
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -1,0 +1,280 @@
+# Config v2 -- REFACTOR-PLAN §6.
+#
+# Source list is the usable set from P0-recon-santos.md §3: 16 of 27 supplied
+# Santos sites. NOT listed here, deliberately:
+#   - 7 domains that do not resolve (P0 §2.1)
+#   - 4 domains whose robots.txt disallows us (P0 §2.2): rglimoveis.com,
+#     praiamarimoveis.com.br, grandeestiloimoveis.com.br, novahimoveis.com.br
+#     They are partnership targets, not crawl targets. A granted feed is
+#     unaffected by robots.txt; scraping them is off the table by policy.
+#
+# `enabled: false` means "no adapter exists yet", not "site is bad". A source
+# is switched on when its platform adapter passes §10.
+
+version: 2
+
+sources:
+  # -- Group A (P0 called this "Microsistec"; §13.1 split it in two) ---------
+  # /{id}-{type}-em-{city}-bairro-{neighborhood}.html
+  - domain: scimoveissantos.com.br
+    platform: microsistec_a
+    cidades: [santos]
+    transactions: [venda, locacao]
+    enabled: true
+    rate_limit_rps: 0.5
+    feed_url: null
+    notes: "452 sitemap URLs; 5/5 sampled live"
+  - domain: casabellaimoveis.com
+    platform: microsistec_a
+    cidades: [santos]
+    transactions: [venda, locacao]
+    enabled: true
+    rate_limit_rps: 0.5
+    feed_url: null
+    notes: "214 sitemap URLs"
+
+  # -- Group B: /detalhes/imovel/{type}/{city}/{neighborhood}/codigo/{code} --
+  # JSON-LD is MANDATORY here, not preferred: price is in JSON-LD on 4/4 pages
+  # but in scrapeable visible text on only 3/6 (§13.2).
+  # transaction_type is absent from listing URL and JSON-LD alike -- it must
+  # come from the discovery path (§13.3), which is client-rendered (§13.4).
+  - domain: cferreiraimoveis.com.br
+    platform: microsistec_b
+    cidades: [santos]
+    transactions: [venda, locacao]
+    enabled: true
+    rate_limit_rps: 0.2
+    feed_url: null
+    notes: "1093 listings -- largest single source in the set"
+  - domain: taguaimoveis.com.br
+    platform: microsistec_b
+    cidades: [santos]
+    transactions: [venda, locacao]
+    enabled: true
+    rate_limit_rps: 0.2
+    feed_url: null
+    notes: "253 sitemap URLs"
+
+  # -- Universal Software ----------------------------------------------------
+  # P0 ranked this the hardest platform (sitemap 0/6 live, all 410). The P4
+  # probe found a JSON API instead: POST /retornar-imoveis-disponiveis, with
+  # `finalidade` as an input parameter. 1831 listings in ~38 requests.
+  # Only 2 of the 4 domains run a build with that endpoint -- see the notes.
+  - domain: consultareimoveis.com.br
+    platform: universal
+    cidades: [santos]
+    transactions: [venda, locacao]
+    enabled: true
+    rate_limit_rps: 0.2
+    feed_url: null
+    notes: "sitemap stale -- crawl category pages (P0 §4.2)"
+  - domain: spolaorimoveis.com.br
+    platform: universal
+    cidades: [santos]
+    transactions: [venda, locacao]
+    enabled: true
+    rate_limit_rps: 0.2
+    feed_url: null
+  - domain: viveremsantosimoveis.com.br
+    platform: universal
+    cidades: [santos]
+    transactions: [venda, locacao]
+    enabled: false
+    rate_limit_rps: 0.2
+    feed_url: null
+    notes: "P4: older build -- /retornar-imoveis-disponiveis 404s; listings JS-rendered"
+  - domain: buccalonimoveis.com.br
+    platform: universal
+    cidades: [santos]
+    transactions: [venda, locacao]
+    enabled: false
+    rate_limit_rps: 0.2
+    feed_url: null
+    notes: "P4: endpoint exists but backend returns 500 -> /manutencao"
+
+  # -- Long tail: one adapter each, low volume ------------------------------
+  - domain: familiaimoveis.com.br
+    platform: wordpress
+    cidades: [santos]
+    transactions: [venda, locacao]
+    enabled: false
+    rate_limit_rps: 0.2
+    feed_url: null
+  - domain: bellar.com.br
+    platform: wordpress
+    cidades: [santos]
+    transactions: [venda, locacao]
+    enabled: false
+    rate_limit_rps: 0.2
+    feed_url: null
+  - domain: vivasantosimoveis.com.br
+    platform: praedium
+    cidades: [santos]
+    transactions: [venda, locacao]
+    enabled: false
+    rate_limit_rps: 0.2
+    feed_url: null
+  - domain: novaaliancaimoveis.com.br
+    platform: sitemidas
+    cidades: [santos]
+    transactions: [venda, locacao]
+    enabled: false
+    rate_limit_rps: 0.2
+    feed_url: null
+  - domain: serlamimobiliaria.com.br
+    platform: veploy
+    cidades: [santos]
+    transactions: [venda, locacao]
+    enabled: true
+    rate_limit_rps: 0.2
+    feed_url: null
+
+  # -- Unidentified: awaiting the fingerprint-site procedure (§11.3, §12.4) --
+  - domain: r3imoveis.com.br
+    platform: unknown
+    cidades: [santos]
+    transactions: [venda, locacao]
+    enabled: false
+    rate_limit_rps: 0.2
+    feed_url: null
+    notes: "declares 50000 sitemap URLs -- implausible; likely faceted"
+  - domain: costanovaimoveis.com.br
+    platform: unknown
+    cidades: [santos]
+    transactions: [venda, locacao]
+    enabled: false
+    rate_limit_rps: 0.2
+    feed_url: null
+  - domain: belmiroimoveis.com.br
+    platform: unknown
+    cidades: [santos]
+    transactions: [venda, locacao]
+    enabled: false
+    rate_limit_rps: 0.2
+    feed_url: null
+
+  # -- Marketplaces nacionais (D-026, MEDICOES §17) --------------------------
+  # Primeira fonte cujo `city`/`state` sao necessarios: a descoberta precisa
+  # da cidade na URL. Site de imobiliaria local nao precisa -- o dominio JA e
+  # a cidade.
+  #
+  # `rate_limit_rps: 0.1` (10s entre requisicoes) e deliberadamente conservador:
+  # o dominio devolveu 403 depois de ~25 requisicoes a 2s de intervalo em
+  # 2026-08-30. Nao e bloqueio de politica -- `robots.txt` permite os caminhos
+  # usados, tanto em www.olx.com.br quanto em sp.olx.com.br, que tem robots
+  # proprio e tambem permite.
+  # DESLIGADO em 2026-08-30, aguardando decisao -- NAO e "adapter faltando".
+  #
+  # O adapter existe e passa em 18 testes. O bloqueio e de acesso: o Cloudflare
+  # do OLX recusa o cliente HTTP do pipeline e aceita outro, com o MESMO
+  # User-Agent honesto e os MESMOS headers:
+  #
+  #     urllib (stdlib)      HTTP 200   1.020.550 bytes
+  #     requests/urllib3     HTTP 403       5.484 bytes
+  #
+  # A diferenca e a impressao TLS/HTTP2 do cliente, nao nada que a gente diga
+  # sobre quem somos. Trocar o pipeline para urllib SO PORQUE ele passa seria
+  # contornar uma recusa de acesso -- a mesma forma que D-001 proibe, e o
+  # oposto do que fizemos com o imovelweb, onde o 403 foi aceito como resposta.
+  #
+  # Consequencia a registrar: todo o inventario do OLX (MEDICOES §17) foi
+  # medido via urllib, por um caminho que o pipeline real nao tem. A conclusao
+  # "OLX e coletavel" vale para aquele cliente, nao para este.
+  - domain: olx.com.br
+    platform: olx
+    transactions: [venda, locacao]
+    enabled: false
+    rate_limit_rps: 0.1
+    feed_url: null
+    notes: "Cloudflare recusa requests/urllib3 com 403; aceita urllib. Decisao de politica pendente, nao falta de adapter"
+
+  # imovelweb.com.br NAO entra: robots.txt permite, mas o Cloudflare devolve
+  # 403 para o nosso agente honesto em TUDO, inclusive nos sitemaps que o
+  # proprio robots declara (2026-08-30). Alvo de parceria, nao de coleta.
+  #
+  # Responde 200 ao cliente do pipeline (`requests`) na busca E no anuncio --
+  # ao contrario do OLX, nao ha questao de politica aqui (D-027).
+  #
+  # Custa 2 requisicoes por imovel: a BUSCA traz area, andar, quartos, banheiros
+  # e rua; o ANUNCIO traz preco, condominio, IPTU e descricao. Nenhuma das duas
+  # basta sozinha -- e o inverso do `universal`, onde o detalhe tinha tudo.
+  #
+  # `rate_limit_rps: 0.1` (10s). NAO subir sem medir: em 2026-08-31 subi para
+  # 0.2 argumentando que "5s continua conservador" -- palpite meu apresentado
+  # como calculo. A fonte devolveu 429 depois de 43 requisicoes (~3,5 min) e a
+  # corrida morreu com 36 linhas de 3.000.
+  #
+  # O que se sabe, e e pouco:  10s -> 48 requisicoes OK   |   5s -> 429 na 43a
+  # Os dois pararam perto da MESMA CONTAGEM, nao do mesmo tempo, o que levanta
+  # a hipotese de a cota ser por numero de requisicoes numa janela, e nao por
+  # ritmo. Se for, nenhuma taxa resolve 3.000 numa sessao so. Nao esta medido.
+  #
+  # A PAGINACAO DA FONTE CORTA em ~55 paginas (~1.200 anuncios). Volume vem de
+  # FACETAS -- tipo e bairro, cada uma com paginacao propria e pouca
+  # sobreposicao. Os bairros saem das URLs ja vistas, sem lista fixa.
+  - domain: lopes.com.br
+    platform: lopes
+    transactions: [venda, locacao]
+    enabled: true
+    rate_limit_rps: 0.1
+    feed_url: null
+    # Inventario 2026-09-06.
+    #
+    # API sem sessao: portal-product/v2/products-improved/{SKU} responde 200
+    # direto, 13 KB. UMA requisicao por anuncio, nao duas -- ao contrario do
+    # `universal`, cujo detalhe so responde depois da pagina visitada.
+    #
+    # DESCOBERTA PELO SITEMAP, nao pela busca. A busca declara 34.560 anuncios
+    # de venda em SP e pagina ate 20 paginas de 23: teto de 460 por faceta. O
+    # sitemap publica 171.952 URLs sem teto.
+    #
+    # A LISTA NAO BASTA: busca tem 56 campos, detalhe tem 66, e o que falta na
+    # busca e exatamente suites, andar, area total, IPTU e amenidades -- os
+    # cinco ficariam 100% nulos.
+    #
+    # robots.txt permite busca e anuncio, sem crawl-delay declarado. 0,1 rps
+    # por precaucao, o mesmo ritmo que D-030 fixou para o vivareal depois do
+    # 429. Nao subir sem medir.
+    #
+    # Locacao em SP: 14.889 anuncios (temos 2 na base inteira). `dealTypes`
+    # suporta anuncio duplo -- 3 de 9 na amostra do inventario.
+    notes: >-
+      API sem sessao, 1 req/imovel; descoberta por sitemap. Desligada ate a
+      corrida real e a auditoria.
+  - domain: vivareal.com.br
+    platform: vivareal
+    transactions: [venda, locacao]
+    enabled: true
+    rate_limit_rps: 0.1
+    feed_url: null
+    notes: "37.258 anuncios de venda em Santos; busca+anuncio, 2 req/imovel; floorLevel 67%, rua 89%"
+
+  # -- Legacy: kept so nothing is lost if local sources underperform (§8) ----
+  - domain: zapimoveis.com.br
+    platform: zap
+    cidades: [santos]
+    transactions: [venda]
+    enabled: false
+    rate_limit_rps: 0.1
+    feed_url: null
+    notes: "Cloudflare-blocked headless since 2026-08-23; non-headless only"
+
+targets:
+  - {state: sp, city: santos}
+  # Sao Paulo entrou em 2026-09-04. As fontes locais declaram `cidades:
+  # [santos]` e sao puladas aqui -- sem esse escopo, as 7 imobiliarias de
+  # Santos coletariam os imoveis DELAS e gravariam na particao de SP.
+  - {state: sp, city: sao paulo}
+
+scraping_params:
+  headless: false          # Cloudflare blocks headless on the legacy source
+  respect_robots: true     # read for visibility; cannot be set false
+
+execution:
+  dry_run: true            # flip to false once an adapter passes §10
+  fail_on_pii: true        # read for visibility; cannot be set false
+
+storage:
+  # §7.1 -- metadata still in the path for browsability, but consumers read
+  # it from columns. refatoramento/01_raw/listings/{state}/{city}/{year}/{month}/{day}/{platform}/{domain}/
+  raw_dir: "gs://dataacquisition/refatoramento/01_raw/listings"

@@ -1,0 +1,6 @@
+fastapi>=0.110
+uvicorn[standard]>=0.27
+pandas>=2.0
+pyarrow>=14
+PyYAML>=6
+lightgbm>=4.0

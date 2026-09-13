@@ -1,0 +1,68 @@
+# Escopo de modelo por cidade — D4, respondida em 2026-09-12.
+#
+# NÃO EXISTE MODELO AGRUPADO DE RESERVA. Uma cidade tem modelo próprio ou não tem
+# estimativa. A alternativa -- servir um modelo agrupado e chamá-lo de estimativa da
+# cidade -- foi recusada: o número sairia com a mesma cara de confiança de um medido,
+# e ninguém na tela conseguiria distinguir os dois.
+#
+# A disponibilidade é por PAR (cidade, alvo), não por cidade. A base tem massa de venda
+# em São Paulo e quase nada de locação -- medido em 2026-09-12 sobre P03_2026-09-07:
+# 5.628 linhas de venda e 2 de locação. Um modelo de aluguel para São Paulo não pode ser
+# treinado hoje, mesmo a cidade estando no escopo.
+#
+# `disponivel: false` NÃO esconde a cidade da tela. Ela aparece na lista e, ao ser
+# escolhida, devolve a mensagem de `motivo`. Esconder faria o usuário concluir que não
+# atendemos a cidade; dizer faz ele saber que ainda não atendemos.
+
+versao: 1
+
+cidades:
+  - slug: santos
+    nome: Santos
+    uf: SP
+    cod_ibge: "3548500"
+    alvos:
+      venda:
+        disponivel: true
+        n_treino_medido: 5808
+      locacao:
+        disponivel: true
+        n_treino_medido: 796
+
+  - slug: sao-paulo
+    nome: São Paulo
+    uf: SP
+    cod_ibge: "3550308"
+    alvos:
+      venda:
+        disponivel: true
+        n_treino_medido: 5628
+      locacao:
+        disponivel: false
+        n_treino_medido: 2
+        motivo: "modelo estatístico ainda não disponível"
+
+  # -- fora do escopo de modelo, e na lista mesmo assim --------------------------
+  # Entram quando a coleta der massa. O n medido fica registrado para que a decisão
+  # de promover uma delas seja tomada sobre número, e não sobre impressão.
+
+  - slug: sao-vicente
+    nome: São Vicente
+    uf: SP
+    alvos:
+      venda:   { disponivel: false, n_treino_medido: 460, motivo: "modelo estatístico ainda não disponível" }
+      locacao: { disponivel: false, n_treino_medido: 41,  motivo: "modelo estatístico ainda não disponível" }
+
+  - slug: guaruja
+    nome: Guarujá
+    uf: SP
+    alvos:
+      venda:   { disponivel: false, n_treino_medido: 375, motivo: "modelo estatístico ainda não disponível" }
+      locacao: { disponivel: false, n_treino_medido: 18,  motivo: "modelo estatístico ainda não disponível" }
+
+  - slug: praia-grande
+    nome: Praia Grande
+    uf: SP
+    alvos:
+      venda:   { disponivel: false, n_treino_medido: 78, motivo: "modelo estatístico ainda não disponível" }
+      locacao: { disponivel: false, n_treino_medido: 1,  motivo: "modelo estatístico ainda não disponível" }

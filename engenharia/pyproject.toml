@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aluguelcerto-engenharia"
+version = "0.1.0"
+description = "Coleta, tratamento, refino e treino do Aluguel Certo"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.0",
+    "pyarrow>=14",
+    "requests>=2.31",
+    "PyYAML>=6",
+    "beautifulsoup4>=4.12",
+    "lightgbm>=4.0",
+    "numpy>=1.26",
+]
+
+# Por que isto existe. O `serving/` antigo alcança o `pipeline/` por `sys.path`
+# apontado à mão. O acoplamento é correto -- o serviço NÃO pode reimplementar
+# feature, sob pena de devolver previsão plausível e errada sem levantar erro --
+# mas a forma é frágil: quebra ao mover qualquer uma das duas pastas, e quebra
+# em silêncio se houver um módulo de mesmo nome antes no caminho.
+#
+# Com o pacote instalável, `pip install -e .` e o backend importa como
+# biblioteca. A dependência passa a ser declarada em vez de improvisada.
+
+[tool.setuptools]
+packages = ["comum",
+            "coleta", "coleta.anuncios", "coleta.anuncios.adapters",
+            "coleta.cnefe", "coleta.fipezap", "coleta.sidra",
+            "tratamento", "tratamento.anuncios",
+            "tratamento.cnefe", "tratamento.fipezap", "tratamento.sidra"]
+
+[tool.setuptools.package-data]
+"*" = ["*.yaml"]

@@ -1,0 +1,119 @@
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+/* ---------------------------------------------------------------------------
+   Tokens — design-system.md §2.
+   Fonte única. NÃO criar um segundo arquivo: `styles/design-tokens.css` foi
+   apagado em 2026-09-10 por ser órfão (nunca importado), ter o `:root`
+   triplicado e redefinir `.text-gray-500` / `.text-gray-900`, que o Tailwind já
+   gera -- colisão de cascata que mudaria cor na aplicação inteira sem erro.
+
+   Por isso os nomes aqui são `ink`, `canvas`, `surface`, e não `gray-*`.
+--------------------------------------------------------------------------- */
+@theme {
+  /* superfícies */
+  --color-canvas:        #EFF3FA;
+  --color-surface:       #FFFFFF;
+  --color-surface-mute:  #F5F8FD;
+
+  /* mapa — plano, sem relevo. O mapa é fundo; o dado são os pinos. */
+  --color-map-fill:      #DBE3F6;
+  --color-map-stroke:    #BFCAE9;
+  --color-map-hover:     #CDD2F0;
+
+  /* texto */
+  --color-ink:           #15203B;
+  --color-ink-soft:      #586686;
+  --color-ink-faint:     #93A0BC;
+
+  /* acentos — UMA FAMILIA SO, AZUL.
+     Do gelo ao marinho, com o ciano como unico desvio de matiz -- e ele
+     tambem e azul. Nenhum verde, nenhum ambar, nenhum vermelho em lugar
+     nenhum do site.
+
+     Onde antes a cor carregava sentido (bom/ruim), agora quem carrega e o
+     ROTULO e o ICONE. Isso resolve dois problemas de uma vez: a tela para de
+     parecer um painel de alarme, e o significado deixa de depender de
+     distinguir verde de vermelho.
+
+     Contraria o design-system.md §2, que definia faixa-abaixo verde e
+     faixa-acima ambar. O artefato de 06/09 e posterior e mais rigoroso; ver
+     DECISOES D-040. */
+  --color-brand:         #2563EB;
+  --color-brand-soft:    #E7EEFD;
+  --color-brand-escuro:  #1B3FA8;
+  --color-ciano:         #0891B2;
+  --color-ciano-soft:    #E2F4FA;
+  --color-linha:         #E6EBF5;
+
+  /* rampa sequencial de 5 passos — do gelo ao marinho.
+     Usada pela escala graduada e pelo preenchimento dos pinos. */
+  --color-rampa-1:       #DCE6FA;
+  --color-rampa-2:       #B4C7F2;
+  --color-rampa-3:       #7C9AE6;
+  --color-rampa-4:       #4571D6;
+  --color-rampa-5:       #1B3FA8;
+
+  /* forma */
+  --radius-card:         1.25rem;
+  --radius-control:      0.75rem;
+  --radius-pill:         9999px;
+
+  /* tipografia */
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ---------------------------------------------------------------------------
+   Sombras — §2. DUAS, não cinco.
+   A referência tem exatamente dois níveis de elevação, e é isso que faz a tela
+   parecer calma. Separação por sombra difusa, nunca por borda.
+--------------------------------------------------------------------------- */
+@layer utilities {
+  .shadow-card {
+    box-shadow: 0 1px 2px rgb(17 24 39 / 0.04),
+                0 8px 24px -8px rgb(17 24 39 / 0.08);
+  }
+  .shadow-float {
+    box-shadow: 0 2px 4px rgb(17 24 39 / 0.06),
+                0 16px 40px -12px rgb(17 24 39 / 0.16);
+  }
+  /* §3: obrigatório em toda coluna de número. Sem isso as colunas de preço
+     dançam entre as linhas da tabela. */
+  .nums { font-variant-numeric: tabular-nums; }
+}
+
+body {
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------------------------------------------------------------------------
+   Movimento — §7.
+   Sem parallax, sem scroll-jacking, sem contador animado em número medido:
+   número que sobe na tela sugere tempo real onde não há.
+--------------------------------------------------------------------------- */
+@layer utilities {
+  .transicao-card { transition: box-shadow 180ms ease-out; }
+  .entra {
+    animation: entra 240ms ease-out both;
+  }
+}
+
+@keyframes entra {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .entra { animation: none; }
+  .transicao-card { transition: none; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+.hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
