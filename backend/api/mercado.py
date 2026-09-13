@@ -31,16 +31,44 @@ def _mes_mais_recente(raiz: Path) -> str | None:
 
 
 def carrega(raiz: str | Path, mes: str | None = None) -> pd.DataFrame:
+    """
+    A observação mais recente de cada bairro, ou um mês específico.
+
+    SEM `mes`, NÃO É O ÚLTIMO ARQUIVO -- é a última linha de cada bairro,
+    através de todos os meses.
+
+    A tabela é mensal por desenho, e ler só o mês mais novo fazia sumir quem
+    não foi recoletado nele: Guarujá tem 51 bairros em agosto e nenhum em
+    setembro, e desaparecia da tela como se não existisse. As sete imobiliárias
+    de Santos foram coletadas em agosto, e as de São Paulo em setembro -- com o
+    recorte por arquivo, metade da base some conforme o mês que se olha.
+
+    Cada linha continua carregando `mes_referencia`, então a tela sabe de
+    quando é o que está mostrando. O que não se pode é esconder o bairro.
+    """
     raiz = Path(raiz)
-    alvo_mes = mes or _mes_mais_recente(raiz)
-    if alvo_mes is None:
+    if mes:
+        caminho = raiz / "mercado" / f"mercado_{mes}.parquet"
+        if not caminho.exists():
+            raise MercadoAusente(f"{caminho} nao existe")
+        return pd.read_parquet(caminho)
+
+    arquivos = sorted((raiz / "mercado").glob("mercado_*.parquet"))
+    if not arquivos:
         raise MercadoAusente(
             f"nenhuma tabela de mercado em {raiz / 'mercado'} -- "
             "o estagio de refino nao rodou")
-    caminho = raiz / "mercado" / f"mercado_{alvo_mes}.parquet"
-    if not caminho.exists():
-        raise MercadoAusente(f"{caminho} nao existe")
-    return pd.read_parquet(caminho)
+
+    partes = [pd.read_parquet(a) for a in arquivos]
+    colunas = sorted(set().union(*(p.columns for p in partes)))
+    tudo = pd.concat([p.reindex(columns=colunas) for p in partes],
+                     ignore_index=True)
+
+    # `bairro` nulo é linha de cidade (as da FipeZAP sem anúncio nosso), e
+    # `dropna=False` a mantém no agrupamento em vez de descartá-la em silêncio.
+    return (tudo.sort_values("mes_referencia")
+            .drop_duplicates(subset=["cidade", "bairro"], keep="last")
+            .reset_index(drop=True))
 
 
 def _limpa(d: pd.DataFrame) -> list[dict]:

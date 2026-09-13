@@ -266,6 +266,25 @@ def constroi(listings: pd.DataFrame, cnefe: str | Path,
             tabela = pd.concat([tabela, extra], ignore_index=True)
             relato["cidades_so_indice"] = len(extra)
 
+    # O NOME VOLTA A TER ACENTO PARA SAIR NA API.
+    #
+    # `lugar()` tira acento porque AGRUPAR precisa disso: `Guarujá` e `Guaruja`
+    # são o mesmo lugar e tinham de colidir. Mas o nome sem acento vazou para a
+    # resposta, e a tela procura `cidades["São Paulo"]` -- que não existe quando
+    # a chave é `Sao Paulo`.
+    #
+    # O sintoma enganava: no mapa, São Paulo, Vitória, Brasília e Florianópolis
+    # apareciam "sem dado", e as que apareciam -- Santos, Fortaleza, Aracaju,
+    # Campo Grande, Itapema -- eram exatamente as que não têm acento. Parecia
+    # ausência na fonte e era junção quebrada pela nossa normalização.
+    #
+    # A grafia canônica vem da FipeZAP, que publica com acento.
+    if Path(fipezap).exists():
+        nomes = pd.read_parquet(fipezap).cidade.dropna().unique()
+        canonico = {chave(n): n for n in nomes}
+        tabela["cidade"] = tabela.cidade.map(
+            lambda c: canonico.get(chave(c), c))
+
     return tabela.sort_values(["cidade", "bairro", "mes_referencia"]
                               ).reset_index(drop=True), relato
 
