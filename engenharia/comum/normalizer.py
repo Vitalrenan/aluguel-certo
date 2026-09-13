@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from urllib.parse import urlsplit
 
-from . import privacy, schema
+from . import cidades_alvo, privacy, schema
 
 log = logging.getLogger(__name__)
 
@@ -189,6 +189,24 @@ class Normalizer:
             return None
 
         record = {f: record.get(f) for f in sorted(schema.PROPERTY_FIELDS)}
+
+        # A LISTA DE CIDADES-ALVO É APLICADA AQUI, e não no tratamento.
+        #
+        # Descartar depois já teria custado requisição no site da fonte e linha
+        # no lago -- e uma regra que só existe em documento vira sugestão. A
+        # base tinha 41 cidades, 36 delas com menos de vinte anúncios; essa
+        # cauda não treina modelo, não enche mapa, e conta como volume em toda
+        # medição por cidade.
+        #
+        # Plataforma regional devolvendo imóvel de cidade vizinha CONTINUA
+        # passando, desde que a vizinha esteja na lista: o Guarujá entrou pela
+        # coleta apontada para Santos. O filtro é por cidade-alvo, não por
+        # cidade que pedimos.
+        cidade = record.get("city")
+        if cidade and not cidades_alvo.esta_no_alvo(cidade):
+            self.stats.rejected["cidade_fora_do_alvo"] += 1
+            log.debug("fora do alvo: %s (%s)", cidade, record.get("link"))
+            return None
 
         self.stats.kept += 1
         for fname, value in record.items():

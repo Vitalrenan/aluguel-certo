@@ -4,6 +4,7 @@ Tudo que produz dado. Nenhum processo daqui atende HTTP.
 
 ```
 config/       fontes.yaml, cidades.yaml — o que coletar e para quem há modelo
+painel.py     painel administrativo da coleta, HTML local
 comum/        biblioteca compartilhada: schema, privacidade, lago, vocabulário
 coleta/       01_raw  — um microserviço por fonte
 tratamento/   02_processed — limpeza, dedup e a tabela histórica mensal
@@ -15,6 +16,30 @@ tests/        nenhum toca a rede
 ```
 
 ---
+
+## A lista de cidades é fechada
+
+**Coleta de anúncio acontece em quinze cidades e em mais nenhuma.** A lista vive
+em [`comum/cidades_alvo.py`](comum/cidades_alvo.py), como objetos, e o porquê
+está em [`COLETA.md`](COLETA.md).
+
+A regra é aplicada na INGESTÃO, por `cidades_alvo.esta_no_alvo()`, antes de
+qualquer linha ir ao disco. Filtrar depois já teria custado requisição no site
+da fonte, e regra aplicada tarde demais é indistinguível de regra não aplicada.
+
+A base tinha anúncio de 41 cidades e 36 delas com menos de vinte linhas. Cauda
+que não treina modelo, não enche mapa e conta como volume em toda medição.
+
+## O painel
+
+```bash
+python painel.py
+```
+
+HTML local e administrativo, que **não vai para a nuvem**: mostra saúde de
+processo e contagem por cidade, que é informação de operação e não de produto.
+Lê o disco, não a API -- perguntar ao serviço que consome a coleta mediria o
+consumo, não a produção.
 
 ## A partição da camada crua — ano / mês / dia
 

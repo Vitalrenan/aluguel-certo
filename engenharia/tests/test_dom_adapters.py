@@ -57,7 +57,7 @@ class FakeSession:
 def veploy_page(sale=430000, rent=3000, name=None, condo="R$ 450,00",
                 iptu="R$ 120,00"):
     name = name or ("Apartamento com 2 dormitórios, 51 m² - venda por "
-                    "R$ 430.000,00 - Centro - São Vicente/SP")
+                    "R$ 430.000,00 - Centro - Santos/SP")
     offers = []
     if sale:
         offers.append('{"@type":"Offer","price":%d,"priceCurrency":"BRL",'
@@ -157,7 +157,7 @@ class TestVeployFields(unittest.TestCase):
         """PostalAddress puts the NEIGHBOURHOOD in addressLocality here."""
         r = self._parse()
         self.assertEqual((r["neighborhood"], r["city"], r["state"]),
-                         ("Centro", "São Vicente", "SP"))
+                         ("Centro", "Santos", "SP"))
 
     def test_useful_area_from_title_total_from_floorsize(self):
         r = self._parse()
