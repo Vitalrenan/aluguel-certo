@@ -1,0 +1,24 @@
+# Build da imagem dos jobs.
+#
+# UMA IMAGEM PARA AS SEIS ETAPAS. Elas compartilham a mesma biblioteca, e uma
+# imagem por etapa multiplicaria por seis o que tem de ser construído, publicado
+# e mantido em dia. O job diz qual módulo rodar; a imagem não decide.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --file=engenharia/Dockerfile
+      - --tag=${_IMAGEM}
+      - .
+
+images:
+  - ${_IMAGEM}
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8      # o Chrome pesa no build; a máquina padrão demora
+
+timeout: 1800s
+
+substitutions:
+  _IMAGEM: southamerica-east1-docker.pkg.dev/aluguelcerto/aluguel-certo/engenharia:latest

@@ -1,0 +1,22 @@
+# Build da imagem da API.
+#
+# O CONTEXTO É A RAIZ DE `refatoramento/`, e não `backend/`. A imagem copia de
+# `engenharia/` e de `backend/`, porque o serviço depende da engenharia como
+# biblioteca -- ele não pode reimplementar feature. Com o contexto em `backend/`
+# o primeiro `COPY engenharia/...` falharia.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --file=backend/Dockerfile
+      - --tag=${_IMAGEM}
+      - .
+
+images:
+  - ${_IMAGEM}
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+substitutions:
+  _IMAGEM: southamerica-east1-docker.pkg.dev/aluguelcerto/aluguel-certo/api:latest
