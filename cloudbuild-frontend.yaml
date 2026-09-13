@@ -1,0 +1,29 @@
+# Build da imagem do frontend.
+#
+# O CONTEXTO É A RAIZ, para o Dockerfile poder referenciar `frontend/` do mesmo
+# jeito que os outros dois referenciam `engenharia/` e `backend/`. Um contexto
+# por pasta faria cada imagem ter a sua convenção.
+#
+# `_API_URL` chega como argumento de BUILD porque `NEXT_PUBLIC_*` é embutida no
+# bundle na compilação. Passá-la como variável do contêiner não teria efeito.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --file=frontend/Dockerfile
+      - --build-arg=NEXT_PUBLIC_API_URL=${_API_URL}
+      - --tag=${_IMAGEM}
+      - .
+
+images:
+  - ${_IMAGEM}
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+
+timeout: 1800s
+
+substitutions:
+  _IMAGEM: southamerica-east1-docker.pkg.dev/aluguelcerto/aluguel-certo/frontend:latest
+  _API_URL: http://127.0.0.1:8000

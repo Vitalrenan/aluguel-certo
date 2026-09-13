@@ -5,11 +5,10 @@
 #   gcloud auth login        # com a conta dona do projeto
 #   ./criar-contas.sh
 #
-# DUAS CONTAS, NÃO UMA. Os jobs escrevem no lago e a API só lê. Uma conta só,
-# com escrita, deixaria a API capaz de sobrescrever a camada refinada que ela
-# deveria apenas servir -- e o único freio seria o `readonly` do volume, que é
-# configuração de deploy e não identidade. Quem remover essa flag um dia não
-# encontraria nenhuma outra barreira.
+# UMA CONTA, E ELA SÓ LÊ. Só a API vai a produção; a engenharia roda local e
+# escreve no bucket com a credencial de quem a executa. Nada em produção precisa
+# de escrita, e uma identidade com escrita que ninguém usa é superfície sem
+# contrapartida.
 #
 # O ESCOPO É O BUCKET, NÃO O PROJETO. `roles/storage.objectUser` concedido no
 # projeto alcança todo bucket que existir depois. Concedido no bucket, alcança
@@ -22,9 +21,8 @@
 set -euo pipefail
 
 PROJETO="${PROJETO:-aluguelcerto}"
-BUCKET="${BUCKET:-dataacquisition}"
+BUCKET="${BUCKET:-aluguelcerto-lake}"
 
-SA_JOBS="aluguelcerto-jobs@${PROJETO}.iam.gserviceaccount.com"
 SA_API="aluguelcerto-api@${PROJETO}.iam.gserviceaccount.com"
 
 gcloud config set project "${PROJETO}" >/dev/null
@@ -41,20 +39,11 @@ cria() {
 }
 
 echo "Contas de execução"
-cria aluguelcerto-jobs "Aluguel Certo — jobs" \
-     "Coleta, tratamento, refino e treino. Lê e escreve no lago."
 cria aluguelcerto-api  "Aluguel Certo — API" \
      "Serviço de estimativa. Somente leitura da camada refinada."
 
 echo
-echo "Papéis, no bucket e não no projeto"
-
-# objectUser: ler, criar e apagar objeto. Os jobs precisam de criar; apagar
-# entra porque o tratamento REESCREVE a partição do mês ao reconstruí-la.
-gcloud storage buckets add-iam-policy-binding "gs://${BUCKET}" \
-  --member="serviceAccount:${SA_JOBS}" \
-  --role="roles/storage.objectUser" >/dev/null
-echo "  jobs -> storage.objectUser em gs://${BUCKET}"
+echo "Papel, no bucket e não no projeto"
 
 # objectViewer: só leitura. A API nunca escreve no lago.
 gcloud storage buckets add-iam-policy-binding "gs://${BUCKET}" \

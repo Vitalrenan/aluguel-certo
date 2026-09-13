@@ -29,6 +29,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api import artefato as A
 from api import mercado as mercado_mod
+from api import telas
 from api import resolucao
 from api.contrato import Estimativa
 from comum.ml import formulario
@@ -125,8 +126,24 @@ def cidades() -> dict:
 @app.get("/mercado")
 def mercado(cidade: str | None = Query(default=None),
             mes: str | None = Query(default=None)) -> dict:
-    """City-level indicators, one query on the market table."""
-    return mercado_mod.por_cidade(REFINED, cidade, mes)
+    """
+    Indicadores por cidade, uma consulta na tabela de mercado.
+
+    `cidades` é DICIONÁRIO indexado pelo nome, e não lista: é o formato que a
+    tela consome. Devolver lista fazia `mercado.cidades[cidade]` valer
+    `undefined`, e a tela quebrava lendo um campo dele.
+    """
+    tabela = mercado_mod.carrega(REFINED, mes)
+    resposta = telas.mercado(tabela)
+    if cidade:
+        d = resposta["cidades"].get(cidade)
+        if d is None:
+            raise HTTPException(
+                404, f"sem indicadores de mercado para {cidade!r}. "
+                     f"Disponíveis: {sorted(resposta['cidades'])}")
+        return {"fonte": resposta["fonte"], "referencia": resposta["referencia"],
+                "cidade": cidade, "indicadores": d}
+    return resposta
 
 
 @app.get("/bairros/indicadores")
@@ -134,13 +151,112 @@ def bairros_indicadores(cidade: str | None = Query(default=None),
                         mes: str | None = Query(default=None),
                         com_coordenada: bool = Query(default=False)) -> dict:
     """
-    Neighbourhood indicators, the same table with a filter.
+    Indicadores por bairro, a mesma tabela com filtro.
 
-    `com_coordenada=true` returns only what the map can draw. A neighbourhood
-    with no coordinate keeps `lat` null and never receives the city centroid:
-    an invented point is indistinguishable from a measured one.
+    `com_coordenada=true` devolve só o que o mapa desenha. Bairro sem
+    coordenada fica com `lat` nula e nunca recebe o centroide da cidade: ponto
+    inventado é indistinguível de medido.
     """
-    return mercado_mod.por_bairro(REFINED, cidade, mes, com_coordenada)
+    tabela = mercado_mod.carrega(REFINED, mes)
+    return telas.bairros(tabela, cidade, com_coordenada)
+
+
+@app.get("/modelo")
+def modelo(completo: bool = Query(default=False),
+           cidade: str | None = Query(default=None),
+           alvo: str | None = Query(default=None)) -> dict:
+    """
+    Proveniência do número: de quando é a base, quantos imóveis, qual erro.
+
+    É o que separa "a IA disse" de uma estimativa auditável, e a tela a mostra
+    ao lado do resultado.
+
+    Sem `cidade` e `alvo` responde pelo PRIMEIRO par disponível. O serviço
+    antigo servia um segmento só, e a tela ainda chama esta rota sem
+    argumento; recusar aqui quebraria a home por falta de um parâmetro que ela
+    nunca teve motivo para mandar.
+    """
+    pares = [p for p in resolucao.catalogo(str(CIDADES)) if p.disponivel]
+    if not pares:
+        raise HTTPException(503, "nenhum par disponível")
+    alvo_par = pares[0] if not (cidade and alvo) else None
+
+    try:
+        _, cartao = resolucao.resolve(
+            MODELOS, str(CIDADES),
+            cidade or alvo_par.cidade, alvo or alvo_par.alvo)
+    except resolucao.SemModelo as exc:
+        raise HTTPException(status_code=422, detail={
+            "cidade": exc.cidade, "alvo": exc.alvo, "motivo": exc.motivo,
+        }) from exc
+
+    return cartao if completo else telas.metadados(cartao)
+
+
+@app.get("/bairros")
+def bairros(cidade: str | None = Query(default=None)) -> dict:
+    """
+    Os bairros que o modelo conhece.
+
+    Impede o pior erro de formulário livre: o usuário digita um bairro que não
+    casa com nenhuma categoria, vira nulo, e a segunda variável mais forte da
+    base é perdida em silêncio.
+    """
+    tabela = mercado_mod.carrega(REFINED)
+    d = tabela
+    if cidade:
+        d = d[d.cidade.map(resolucao.slug) == resolucao.slug(cidade)]
+    lista = sorted(d.bairro.dropna().unique().tolist())
+    return {"cidade": cidade, "filtrado": bool(cidade),
+            "n": len(lista), "bairros": lista}
+
+
+@app.get("/opcoes")
+def opcoes() -> dict:
+    """
+    O formulário inteiro e o vocabulário fechado de cada categórica.
+
+    Os níveis vêm do ARTEFATO, não do código: é o treino que define o que o
+    modelo conhece, e um artefato mais velho que o código continua servindo o
+    seu próprio vocabulário em vez de um inventado.
+    """
+    pares = [p for p in resolucao.catalogo(str(CIDADES)) if p.disponivel]
+    if not pares:
+        raise HTTPException(503, "nenhum par disponível")
+    pasta, _ = resolucao.resolve(MODELOS, str(CIDADES),
+                                 pares[0].cidade, pares[0].alvo)
+    art = A.carrega(pasta)
+
+    def do_artefato(coluna, traducao=None):
+        conhecidos = set(art.niveis(coluna))
+        if traducao is None:
+            return [{"valor": v, "rotulo": formulario.rotulo(v)}
+                    for v in sorted(conhecidos)]
+        return [{"valor": k, "rotulo": formulario.rotulo(k)}
+                for k, dest in traducao.items()
+                if dest in conhecidos or dest in formulario.NIVEIS_INTERNOS]
+
+    # As cidades saem do catálogo, não do artefato: o artefato de Santos só
+    # conhece Santos, e a tela precisa oferecer todas as que o serviço atende.
+    vocabulario = {
+        "transacao": [{"valor": a, "rotulo": formulario.rotulo(a)}
+                      for a in sorted({p.alvo for p in pares})],
+        "cidade": [{"valor": c, "rotulo": c}
+                   for c in sorted({p.cidade for p in pares})],
+        "tipo": do_artefato("property_type"),
+        "vaga_tipo": do_artefato("rx_vaga_tipo", formulario.VAGA_USUARIO),
+        "vista": do_artefato("rx_vista", formulario.VISTA_USUARIO),
+    }
+    perguntas = [{
+        "api": p.api, "rotulo": p.rotulo, "tipo": p.tipo,
+        "obrigatoria": p.obrigatoria,
+        "faixa": list(p.faixa) if p.faixa else None,
+        "opcoes": vocabulario.get(p.api),
+        "delta_rmse": p.delta_rmse, "nota": p.nota,
+    } for p in formulario.PERGUNTAS]
+
+    return {"perguntas": perguntas, "vocabulario": vocabulario,
+            "bairro": "use GET /bairros — a lista é longa demais para esta rota"}
 
 
 # --------------------------------------------------------------------------
@@ -203,22 +319,28 @@ def estimativa(pedido: Estimativa) -> dict:
         ressalvas.append(
             f"o valor estimado cai fora da faixa em que o modelo foi treinado "
             f"(R$ {faixa['p01']:,.0f} a R$ {faixa['p99']:,.0f}); "
-            f"trate-o como indicacao, nao como estimativa")
+            f"trate-o como indicação, não como estimativa")
 
-    ident, escopo = cartao["identificacao"], cartao["escopo"]
+    # O modelo prevê PREÇO. O aluguel sai do rendimento publicado da cidade
+    # aplicado a esse preço -- premissa de mercado, não previsão, e por isso o
+    # bloco carrega `tipo: "ancora_de_mercado"`.
+    aluguel, motivo = None, None
+    if pedido.transacao == "venda":
+        try:
+            tabela = mercado_mod.carrega(REFINED)
+            aluguel, motivo = telas.aluguel(preco, lo, hi, pedido.cidade, tabela)
+        except mercado_mod.MercadoAusente as exc:
+            motivo = str(exc)
+    if motivo:
+        ressalvas.append(motivo)
+
     return {
         "estimativa": preco,
         "intervalo": {"min": lo, "max": hi},
+        "aluguel": aluguel,
+        "modelo": telas.resumo_do_modelo(cartao),
         "campos_ausentes": formulario.campos_ausentes(resposta),
         "ressalvas": ressalvas,
-        "modelo": {
-            "cidade": ident["cidade"], "alvo": ident["alvo"],
-            "ano": ident["ano"], "mes": ident["mes"],
-            "versao": ident["versao"],
-            "escopo_treino": escopo["escopo_treino"],
-            "n_treino": escopo["n_treino"],
-            "periodo_dos_dados": escopo.get("periodo_dos_dados"),
-        },
     }
 
 

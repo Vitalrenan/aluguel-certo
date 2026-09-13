@@ -100,7 +100,7 @@ def geocodifica(d: pd.DataFrame, cnefe: str | Path) -> pd.Series:
 
 
 def _junta_atrasado(esquerda: pd.DataFrame, direita: pd.DataFrame,
-                    por: list[str] | None) -> pd.DataFrame:
+                    por: list[str] | None, sufixo: str = "indice") -> pd.DataFrame:
     """
     Join an index published with a lag: the most recent value up to the month.
 
@@ -118,10 +118,16 @@ def _junta_atrasado(esquerda: pd.DataFrame, direita: pd.DataFrame,
     def _num(s):
         return s.str.replace("-", "", regex=False).astype(int)
 
+    # O NOME DA COLUNA DE MÊS CARREGA A FONTE. Chamar as duas de
+    # `mes_referencia_indice` fazia o pandas desempatar sozinho com `_x` e `_y`
+    # -- sufixo que não diz qual é da FipeZAP e qual é do IPCA, e que muda de
+    # lado se a ordem das junções mudar.
+    coluna_mes = f"mes_referencia_{sufixo}"
+
     e = esquerda.copy()
     e["_m"] = _num(e.mes_referencia)
-    d = direita.rename(columns={"mes_referencia": "mes_referencia_indice"}).copy()
-    d["_m"] = _num(d.mes_referencia_indice)
+    d = direita.rename(columns={"mes_referencia": coluna_mes}).copy()
+    d["_m"] = _num(d[coluna_mes])
 
     e = e.sort_values("_m")
     d = d.sort_values("_m")
@@ -181,10 +187,13 @@ def constroi(listings: pd.DataFrame, cnefe: str | Path,
     # --- indice publicado, por cidade e mes ------------------------------
     if Path(fipezap).exists():
         fz = pd.read_parquet(fipezap)[
-            ["cidade", "mes_referencia", "venda_m2", "locacao_m2",
+            ["cidade", "mes_referencia", "venda_m2", "venda_var12",
+             "locacao_m2", "locacao_var12",
              "yield_mensal", "yield_p10", "yield_p90"]]
         fz = fz.rename(columns={
-            "venda_m2": "fipezap_venda_m2", "locacao_m2": "fipezap_locacao_m2",
+            "venda_m2": "fipezap_venda_m2", "venda_var12": "fipezap_venda_var12",
+            "locacao_m2": "fipezap_locacao_m2",
+            "locacao_var12": "fipezap_locacao_var12",
             "yield_mensal": "fipezap_yield_mensal",
             "yield_p10": "fipezap_yield_p10", "yield_p90": "fipezap_yield_p90"})
         # A juncao usa a chave canonica: `Sao Paulo` da base e `São Paulo` da
@@ -204,7 +213,8 @@ def constroi(listings: pd.DataFrame, cnefe: str | Path,
 
         fz["_k"] = fz.cidade.map(chave)
         tabela["_k"] = tabela.cidade.map(chave)
-        tabela = _junta_atrasado(tabela, fz.drop(columns=["cidade"]), por=["_k"])
+        tabela = _junta_atrasado(tabela, fz.drop(columns=["cidade"]),
+                                 por=["_k"], sufixo="fipezap")
         relato["com_fipezap"] = int(tabela.fipezap_venda_m2.notna().sum())
         relato["com_yield"] = int(tabela.fipezap_yield_mensal.notna().sum())
         tabela = tabela.drop(columns=["_k"])
@@ -213,8 +223,48 @@ def constroi(listings: pd.DataFrame, cnefe: str | Path,
     if Path(sidra).exists():
         sd = pd.read_parquet(sidra)[["recorte", "mes_referencia", "ipca_12m"]]
         sd = sd.rename(columns={"recorte": "recorte_ipca"})
-        tabela = _junta_atrasado(tabela, sd, por=None)
+        tabela = _junta_atrasado(tabela, sd, por=None, sufixo="ipca")
         relato["com_ipca"] = int(tabela.ipca_12m.notna().sum())
+
+    # AS CIDADES DA FIPEZAP QUE NÃO TÊM ANÚNCIO NOSSO ENTRAM MESMO ASSIM, como
+    # linha de cidade com `bairro` nulo.
+    #
+    # O grão da tabela é cidade × bairro × mês e nasce dos nossos anúncios, o
+    # que restringia a resposta às 6 cidades onde coletamos. O mapa do front
+    # acompanha 15 capitais e ficou com 14 pinos tracejados -- a FipeZAP publica
+    # todas as 15, e a informação existia; era o grão que a escondia.
+    #
+    # A linha de cidade traz só o bloco de índice. As colunas do nosso mercado
+    # ficam nulas de propósito: nulo é "não medimos aqui", e preencher com zero
+    # faria a tela mostrar uma cidade com zero imóveis como se fosse medida.
+    if Path(fipezap).exists():
+        fz_todas = pd.read_parquet(fipezap)
+        mes_alvo = tabela.mes_referencia.max()
+        ja_temos = {chave(c) for c in tabela.cidade}
+
+        faltantes = (fz_todas[~fz_todas.cidade.map(chave).isin(ja_temos)]
+                     .sort_values("mes_referencia")
+                     .drop_duplicates(subset="cidade", keep="last"))
+        if len(faltantes):
+            extra = pd.DataFrame({
+                "cidade": faltantes.cidade.map(lugar).values,
+                "uf": None, "bairro": None, "mes_referencia": mes_alvo,
+                "n_anuncios": 0,
+                "fipezap_venda_m2": faltantes.venda_m2.values,
+                "fipezap_venda_var12": faltantes.venda_var12.values,
+                "fipezap_locacao_m2": faltantes.locacao_m2.values,
+                "fipezap_locacao_var12": faltantes.locacao_var12.values,
+                "fipezap_yield_mensal": faltantes.yield_mensal.values,
+                "fipezap_yield_p10": faltantes.yield_p10.values,
+                "fipezap_yield_p90": faltantes.yield_p90.values,
+                "mes_referencia_fipezap": faltantes.mes_referencia.values,
+            })
+            if "ipca_12m" in tabela:
+                extra["ipca_12m"] = tabela.ipca_12m.dropna().iloc[0] \
+                    if tabela.ipca_12m.notna().any() else None
+                extra["recorte_ipca"] = "Brasil"
+            tabela = pd.concat([tabela, extra], ignore_index=True)
+            relato["cidades_so_indice"] = len(extra)
 
     return tabela.sort_values(["cidade", "bairro", "mes_referencia"]
                               ).reset_index(drop=True), relato
