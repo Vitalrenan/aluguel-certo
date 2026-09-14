@@ -191,46 +191,71 @@ def por_cidade(hist: pd.DataFrame, bruto: pd.DataFrame) -> list[dict]:
 
 # ---------------------------------------------------------------------------
 # desenho
+#
+# O PADRÃO É O DO FRONTEND, e não um segundo. Cartão branco sobre cinza-gelo,
+# separação por SOMBRA e nunca por borda, raio grande e uniforme, e a tela
+# majoritariamente silenciosa -- `frontend/design-system.md` §1.
+#
+# UMA FAMÍLIA DE ACENTO SÓ, AZUL. O ciano é o único desvio de matiz, e ele
+# também é azul. Aqui o estado de cada item é dito pelo RÓTULO, não pela cor:
+# um painel de operação que depende de distinguir verde de vermelho falha para
+# quem não distingue, e falha de noite para todo mundo.
 # ---------------------------------------------------------------------------
 
-def _barra(n: int, teto: int, largura: int = 120) -> int:
-    return 0 if not teto else max(2, round(largura * n / teto))
+def _barra(n: int, teto: int, largura: int = 132) -> float:
+    """
+    Zero é ZERO pixel, e não o mínimo visível.
+
+    O piso de 3px existe para que uma cidade com poucas dezenas de anúncios não
+    desapareça da barra. Aplicado também ao zero, ele desenhava um ponto azul em
+    doze cidades que não têm anúncio nenhum -- o mesmo traço para "quase nada" e
+    para "nada", que são estados diferentes desta esteira.
+    """
+    if not n or not teto:
+        return 0
+    return max(3, round(largura * n / teto, 1))
 
 
 def desenha(cidades: list[dict], itens: list[dict], bruto: pd.DataFrame,
             hist: pd.DataFrame) -> str:
     e = html.escape
-    agora = datetime.now().strftime("%d/%m/%Y %H:%M")
+    agora = datetime.now().strftime("%d/%m/%Y às %H:%M")
     teto = max([c["venda"] + c["locacao"] for c in cidades] + [1])
 
     total_v = sum(c["venda"] for c in cidades)
     total_l = sum(c["locacao"] for c in cidades)
     coletando = sum(1 for c in cidades if c["venda"] + c["locacao"] > 0)
     problemas = [i for i in itens if not i["ok"]]
+    particoes = len(bruto)
 
     def linha_cidade(c: dict) -> str:
         tem = c["venda"] + c["locacao"] > 0
+        estado = c["estado"].replace("_", " ")
         return f"""
-      <tr class="{'tem' if tem else 'vazia'}">
-        <td class="cid"><b>{e(c['nome'])}</b> <span class="uf">{e(c['uf'])}</span></td>
-        <td><span class="pill pill--{e(c['estado'])}">{e(c['estado'].replace('_', ' '))}</span></td>
-        <td class="num">{c['venda']:,}</td>
-        <td class="num">{c['locacao']:,}</td>
-        <td class="barra">
-          <i style="width:{_barra(c['venda'], teto)}px" class="b-v"></i><i
-             style="width:{_barra(c['locacao'], teto)}px" class="b-l"></i>
-        </td>
-        <td class="num">{c['dominios'] or '—'}</td>
-        <td class="mono">{e(c['ultima_coleta'])}</td>
-      </tr>"""
+        <tr class="{'tem' if tem else 'vazia'}">
+          <td><span class="cid">{e(c['nome'])}</span><span class="uf">{e(c['uf'])}</span></td>
+          <td><span class="pilula pilula--{e(c['estado'])}">{e(estado)}</span></td>
+          <td class="num">{c['venda']:,}</td>
+          <td class="num">{c['locacao']:,}</td>
+          <td class="prop">
+            <span class="trilho">
+              <i class="b-v" style="width:{_barra(c['venda'], teto)}px"></i><i
+                 class="b-l" style="width:{_barra(c['locacao'], teto)}px"></i>
+            </span>
+          </td>
+          <td class="num soft">{c['dominios'] or '—'}</td>
+          <td class="num soft">{e(c['ultima_coleta'])}</td>
+        </tr>"""
 
-    def linha_saude(i: dict) -> str:
+    def item_saude(i: dict) -> str:
         return f"""
-      <li class="{'ok' if i['ok'] else 'ruim'}">
-        <b>{e(i['titulo'])}</b>
-        <span>{e(i['detalhe'])}</span>
-        {f'<em>{e(i["acao"])}</em>' if i['acao'] else ''}
-      </li>"""
+        <li class="{'ok' if i['ok'] else 'ruim'}">
+          <span class="marca">{'tudo certo' if i['ok'] else 'atenção'}</span>
+          <div>
+            <b>{e(i['titulo'])}</b> <span class="det">{e(i['detalhe'])}</span>
+            {f'<p>{e(i["acao"])}</p>' if i['acao'] else ''}
+          </div>
+        </li>"""
 
     plataformas = ""
     if len(bruto):
@@ -238,141 +263,237 @@ def desenha(cidades: list[dict], itens: list[dict], bruto: pd.DataFrame,
              .agg(particoes=("linhas", "size"), linhas=("linhas", "sum"),
                   dominios=("dominio", "nunique"))
              .sort_values("linhas", ascending=False))
+        teto_p = max(int(g.linhas.max()), 1)
         plataformas = "".join(
-            f"<tr><td>{e(p)}</td><td class='num'>{int(r.dominios)}</td>"
-            f"<td class='num'>{int(r.particoes)}</td>"
-            f"<td class='num'>{int(r.linhas):,}</td></tr>"
-            for p, r in g.iterrows())
+            f"""<tr>
+              <td><span class="cid">{e(p)}</span></td>
+              <td class="num soft">{int(r.dominios)}</td>
+              <td class="num soft">{int(r.particoes)}</td>
+              <td class="num">{int(r.linhas):,}</td>
+              <td class="prop"><span class="trilho"><i class="b-v"
+                 style="width:{_barra(int(r.linhas), teto_p)}px"></i></span></td>
+            </tr>""" for p, r in g.iterrows())
+
+    def kpi(rotulo: str, valor: str, nota: str = "") -> str:
+        return f"""<div class="kpi">
+          <span class="eyebrow">{e(rotulo)}</span>
+          <strong>{e(valor)}</strong>
+          {f'<span class="nota">{e(nota)}</span>' if nota else ''}
+        </div>"""
 
     return f"""<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Painel da coleta — Aluguel Certo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
 <style>
+/* Tokens de frontend/app/globals.css. Fonte única -- um segundo conjunto aqui
+   divergiria do produto na primeira mudança de paleta. */
+:root {{
+  --canvas:#EFF3FA; --surface:#FFFFFF; --surface-mute:#F5F8FD;
+  --ink:#15203B; --ink-soft:#586686; --ink-faint:#93A0BC;
+  --brand:#2563EB; --brand-soft:#E7EEFD; --brand-escuro:#1B3FA8;
+  --ciano:#0891B2; --ciano-soft:#E2F4FA; --linha:#E6EBF5;
+  --r-card:1.25rem; --r-ctrl:.75rem; --r-pill:9999px;
+  /* DUAS sombras, não cinco. É o que faz a tela parecer calma (§2). */
+  --sombra-card:0 1px 2px rgb(17 24 39/.04), 0 8px 24px -8px rgb(17 24 39/.08);
+  --sombra-float:0 2px 4px rgb(17 24 39/.06), 0 16px 40px -12px rgb(17 24 39/.16);
+}}
+@media (prefers-color-scheme:dark) {{
   :root {{
-    --ground:#EFF3FA; --surface:#fff; --mute:#F5F8FD; --sunk:#E8EEF9;
-    --ink:#15203B; --soft:#586686; --faint:#93A0BC;
-    --brand:#2563EB; --wash:#E7EEFD; --ciano:#0891B2; --linha:#E6EBF5;
-    --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+    --canvas:#0A1120; --surface:#131D31; --surface-mute:#18233C;
+    --ink:#E5EBF7; --ink-soft:#9FACC8; --ink-faint:#6C7B9A;
+    --brand:#5F91F2; --brand-soft:#1A2A49; --brand-escuro:#9CBCF9;
+    --ciano:#3CBCD9; --ciano-soft:#0F2F3C; --linha:#24314C;
+    --sombra-card:0 1px 2px rgb(0 0 0/.3), 0 8px 24px -8px rgb(0 0 0/.5);
+    --sombra-float:0 2px 4px rgb(0 0 0/.35), 0 16px 40px -12px rgb(0 0 0/.6);
   }}
-  @media (prefers-color-scheme:dark) {{
-    :root {{ --ground:#0A1120; --surface:#131D31; --mute:#18233C; --sunk:#0F1A2C;
-      --ink:#E5EBF7; --soft:#9FACC8; --faint:#6C7B9A; --brand:#5F91F2;
-      --wash:#1A2A49; --ciano:#3CBCD9; --linha:#24314C; }}
-  }}
-  *,*::before,*::after{{box-sizing:border-box}}
-  body{{margin:0;background:var(--ground);color:var(--ink);
-    font:15px/1.6 Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}}
-  .env{{max-width:1080px;margin:0 auto;padding:0 20px}}
-  header{{background:var(--surface);border-bottom:1px solid var(--linha);
-    padding-block:30px 26px;margin-bottom:34px}}
-  h1{{margin:0 0 6px;font-size:27px;letter-spacing:-.02em}}
-  .selo{{font-family:var(--mono);font-size:11px;letter-spacing:.12em;
-    text-transform:uppercase;color:var(--faint)}}
-  .sub{{color:var(--soft);font-size:14.5px;margin:0}}
-  .placar{{display:flex;flex-wrap:wrap;gap:0;border:1px solid var(--linha);
-    border-radius:12px;overflow:hidden;background:var(--mute);margin-top:20px}}
-  .placar div{{flex:1 1 130px;padding:13px 18px;border-left:1px solid var(--linha)}}
-  .placar div:first-child{{border-left:0}}
-  .placar dt{{font-family:var(--mono);font-size:10px;letter-spacing:.1em;
-    text-transform:uppercase;color:var(--faint);margin-bottom:3px}}
-  .placar dd{{margin:0;font-size:22px;font-weight:600;
-    font-variant-numeric:tabular-nums;letter-spacing:-.02em}}
-  h2{{font-size:19px;margin:36px 0 4px;letter-spacing:-.01em}}
-  .nota{{color:var(--soft);font-size:13.5px;margin:0 0 14px;max-width:70ch}}
-  .caixa{{background:var(--surface);border:1px solid var(--linha);
-    border-radius:12px;overflow-x:auto}}
-  table{{border-collapse:collapse;width:100%;font-size:13.6px}}
-  th{{font-family:var(--mono);font-size:10px;letter-spacing:.1em;
-    text-transform:uppercase;color:var(--faint);text-align:left;
-    padding:11px 14px;border-bottom:1px solid var(--linha);white-space:nowrap}}
-  td{{padding:9px 14px;border-top:1px solid var(--linha);color:var(--soft);
-    vertical-align:middle}}
-  tr:first-child td{{border-top:0}}
-  .num{{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}}
-  .mono{{font-family:var(--mono);font-size:12px}}
-  .cid b{{color:var(--ink);font-weight:600}}
-  .uf{{color:var(--faint);font-size:11.5px;font-family:var(--mono)}}
-  tr.vazia td{{opacity:.55}}
-  .barra{{width:140px}}
-  .barra i{{display:inline-block;height:9px;border-radius:2px;vertical-align:middle}}
-  .b-v{{background:var(--brand)}} .b-l{{background:var(--ciano)}}
-  .pill{{font-family:var(--mono);font-size:10px;letter-spacing:.07em;
-    text-transform:uppercase;padding:3px 8px;border-radius:999px;
-    border:1px solid var(--linha);color:var(--soft);white-space:nowrap}}
-  .pill--coletando{{border-color:var(--brand);color:var(--brand);background:var(--wash)}}
-  .pill--a_inventariar{{border-style:dotted}}
-  ul.saude{{list-style:none;padding:0;margin:0;display:flex;
-    flex-direction:column;gap:1px;background:var(--linha);
-    border:1px solid var(--linha);border-radius:12px;overflow:hidden}}
-  /* FLEX, não grid: no grid cada filho vira uma célula e o título, o detalhe
-     e a ação empilhavam em três linhas. Aqui os três fluem na mesma linha e
-     só a ação quebra, que é onde a quebra ajuda a leitura. */
-  ul.saude li{{background:var(--surface);padding:12px 16px;display:flex;
-    flex-wrap:wrap;align-items:baseline;gap:0 9px}}
-  ul.saude li::before{{content:"ok";font-family:var(--mono);font-size:10px;
-    color:var(--faint);letter-spacing:.06em;flex:none;width:22px}}
-  ul.saude li.ruim::before{{content:"!!";color:var(--brand);font-weight:700}}
-  ul.saude li b{{color:var(--ink);font-weight:600;font-size:14px}}
-  ul.saude li span{{color:var(--soft);font-size:13.5px}}
-  ul.saude li em{{flex-basis:100%;margin-left:31px;color:var(--brand);
-    font-style:normal;font-size:13px;margin-top:3px}}
-  .legenda{{display:flex;gap:20px;font-family:var(--mono);font-size:11.5px;
-    color:var(--soft);padding-top:10px}}
-  .legenda i{{display:inline-block;width:16px;height:9px;border-radius:2px;
-    margin-right:6px;vertical-align:middle}}
-  footer{{margin-top:44px;padding-block:20px 30px;border-top:1px solid var(--linha);
-    font-family:var(--mono);font-size:11.5px;color:var(--faint)}}
+}}
+*,*::before,*::after{{box-sizing:border-box}}
+body{{margin:0;background:var(--canvas);color:var(--ink);
+  font:400 15px/1.6 Inter,ui-sans-serif,system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased}}
+.nums,.num{{font-variant-numeric:tabular-nums}}
+:focus-visible{{outline:2.5px solid var(--brand);outline-offset:3px;border-radius:8px}}
+
+/* -------- leiaute: sidebar 240px + conteúdo, gutter 24, gap 16 -------- */
+.app{{display:grid;grid-template-columns:240px 1fr;min-height:100vh}}
+.lado{{background:var(--surface);border-right:1px solid var(--linha);
+  padding:22px 16px;display:flex;flex-direction:column;gap:26px}}
+.marca{{display:flex;align-items:center;gap:11px;padding:0 6px}}
+.marca .av{{width:38px;height:38px;border-radius:11px;background:var(--brand);
+  color:#fff;display:grid;place-items:center;font-weight:600;font-size:17px;flex:none}}
+/* O seletor mira o span DE DENTRO do nome. Mirando `.marca span` ele
+   pegava o wrapper também, e o `b` herdava o uppercase: a marca saía
+   gritando em caixa alta. */
+.marca .nome b{{display:block;font-weight:600;font-size:15px;line-height:1.25}}
+.marca .nome span{{display:block;font-size:10px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ink-faint);margin-top:2px}}
+.eyebrow{{font-size:11px;font-weight:600;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ink-faint)}}
+.menu{{display:flex;flex-direction:column;gap:3px;margin-top:8px}}
+.menu a{{display:flex;align-items:center;gap:10px;padding:9px 12px;
+  border-radius:var(--r-ctrl);color:var(--ink-soft);text-decoration:none;
+  font-size:14px}}
+.menu a.on{{background:var(--brand-soft);color:var(--brand);font-weight:500}}
+.menu a:hover:not(.on){{background:var(--surface-mute)}}
+.menu i{{width:7px;height:7px;border-radius:2px;background:currentColor;
+  opacity:.55;flex:none}}
+.lado footer{{margin-top:auto;font-size:11.5px;color:var(--ink-faint);
+  line-height:1.55;padding:0 6px}}
+
+main{{padding:26px 24px 40px;max-width:1180px}}
+.topo{{margin-bottom:20px}}
+.topo h1{{margin:6px 0 4px;font-size:26px;font-weight:600;letter-spacing:-.02em}}
+.topo p{{margin:0;color:var(--ink-soft);font-size:14px}}
+
+.cartao{{background:var(--surface);border-radius:var(--r-card);
+  box-shadow:var(--sombra-card);padding:24px;margin-bottom:16px}}
+.cartao > h2{{margin:0 0 3px;font-size:18px;font-weight:500;letter-spacing:-.01em}}
+.cartao > .sub{{margin:0 0 18px;color:var(--ink-soft);font-size:13.5px;max-width:70ch}}
+
+/* -------- KPI -------- */
+.kpis{{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));
+  gap:16px;margin-bottom:16px}}
+.kpi{{background:var(--surface);border-radius:var(--r-card);
+  box-shadow:var(--sombra-card);padding:20px 22px;display:flex;
+  flex-direction:column;gap:7px}}
+.kpi strong{{font-size:30px;font-weight:600;letter-spacing:-.025em;
+  font-variant-numeric:tabular-nums;line-height:1}}
+.kpi .nota{{font-size:12px;color:var(--ink-faint)}}
+.kpi--acento{{background:var(--brand);color:#fff}}
+.kpi--acento .eyebrow,.kpi--acento .nota{{color:rgb(255 255 255/.72)}}
+
+/* -------- saúde -------- */
+ul.saude{{list-style:none;margin:0;padding:0;display:flex;
+  flex-direction:column;gap:2px}}
+ul.saude li{{display:grid;grid-template-columns:104px 1fr;gap:0 16px;
+  align-items:start;padding:11px 14px;border-radius:var(--r-ctrl)}}
+ul.saude li:nth-child(odd){{background:var(--surface-mute)}}
+ul.saude li b{{font-weight:500;font-size:14.5px}}
+ul.saude li .det{{color:var(--ink-soft);font-size:13.5px}}
+ul.saude li p{{margin:4px 0 0;color:var(--brand);font-size:13px}}
+/* O estado é dito pela PALAVRA. Cor sozinha não carrega significado aqui. */
+ul.saude .marca{{font-size:11px;font-weight:600;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--ink-faint);padding-top:2px;
+  display:block}}
+ul.saude li.ruim .marca{{color:var(--brand)}}
+
+/* -------- tabela -------- */
+.rolagem{{overflow-x:auto;margin:0 -6px;padding:0 6px}}
+table{{border-collapse:collapse;width:100%;font-size:14px}}
+th{{text-align:left;font-size:11px;font-weight:600;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ink-faint);padding:0 14px 11px;
+  white-space:nowrap}}
+td{{padding:11px 14px;border-top:1px solid var(--linha);color:var(--ink-soft);
+  vertical-align:middle}}
+.num{{text-align:right;white-space:nowrap;color:var(--ink)}}
+.soft{{color:var(--ink-soft)}}
+.cid{{color:var(--ink);font-weight:500;white-space:nowrap}}
+.uf{{color:var(--ink-faint);font-size:11.5px;margin-left:7px;
+  letter-spacing:.04em}}
+tr.vazia .cid,tr.vazia .uf{{color:var(--ink-faint)}}
+tr.vazia td{{color:var(--ink-faint)}}
+.prop{{width:150px}}
+.trilho{{display:inline-flex;align-items:center;height:8px;border-radius:99px;
+  overflow:hidden;background:var(--surface-mute);min-width:4px}}
+.trilho i{{display:block;height:8px}}
+.b-v{{background:var(--brand)}} .b-l{{background:var(--ciano)}}
+.pilula{{display:inline-block;font-size:11px;font-weight:500;padding:3px 10px;
+  border-radius:var(--r-pill);background:var(--surface-mute);
+  color:var(--ink-soft);white-space:nowrap}}
+.pilula--coletando{{background:var(--brand-soft);color:var(--brand)}}
+.legenda{{display:flex;gap:20px;font-size:12.5px;color:var(--ink-soft);
+  padding-top:14px}}
+.legenda i{{display:inline-block;width:18px;height:8px;border-radius:99px;
+  margin-right:7px;vertical-align:middle}}
+
+@media (max-width:860px){{
+  .app{{grid-template-columns:1fr}}
+  .lado{{border-right:0;border-bottom:1px solid var(--linha)}}
+  .lado footer{{display:none}}
+}}
 </style></head><body>
 
-<header><div class="env">
-  <div class="selo">Painel interno da coleta</div>
-  <h1>Aluguel Certo — esteira</h1>
-  <p class="sub">Lido do disco em {agora}. Roda local, não vai para a nuvem.</p>
-  <dl class="placar">
-    <div><dt>cidades-alvo</dt><dd>{len(cidades)}</dd></div>
-    <div><dt>com anúncio</dt><dd>{coletando}</dd></div>
-    <div><dt>à venda</dt><dd>{total_v:,}</dd></div>
-    <div><dt>para alugar</dt><dd>{total_l:,}</dd></div>
-    <div><dt>alertas</dt><dd>{len(problemas)}</dd></div>
-  </dl>
-</div></header>
+<div class="app">
+  <aside class="lado">
+    <div class="marca">
+      <span class="av">A</span>
+      <div class="nome"><b>Aluguel Certo</b><span>Painel interno</span></div>
+    </div>
+    <nav>
+      <span class="eyebrow">Operação</span>
+      <div class="menu">
+        <a class="on" href="#"><i></i>Coleta</a>
+        <a href="#saude"><i></i>Saúde da esteira</a>
+        <a href="#cidades"><i></i>Cidades-alvo</a>
+        {'<a href="#plataformas"><i></i>Plataformas</a>' if plataformas else ''}
+      </div>
+    </nav>
+    <footer>
+      Roda local, lê o disco.<br>Não vai para a nuvem.
+    </footer>
+  </aside>
 
-<main class="env">
-  <h2>Saúde da esteira</h2>
-  <p class="nota">Cada item diz o que está medido e, quando está ruim, o que
-  isso causa. Número sem leitura deixa o diagnóstico por conta de quem olha.</p>
-  <ul class="saude">{''.join(linha_saude(i) for i in itens)}</ul>
+  <main>
+    <header class="topo">
+      <span class="eyebrow">Painel da coleta</span>
+      <h1>Esteira de dados</h1>
+      <p>Lido do disco em {agora}.</p>
+    </header>
 
-  <h2>As {len(cidades)} cidades-alvo</h2>
-  <p class="nota">A lista é fechada: coleta acontece nestas e em mais nenhuma.
-  Cidade sem anúncio aparece apagada, e não sumida — o que falta coletar é
-  informação de operação tanto quanto o que já foi.</p>
-  <div class="caixa"><table>
-    <thead><tr>
-      <th>cidade</th><th>estado</th><th class="num">venda</th>
-      <th class="num">locação</th><th>proporção</th>
-      <th class="num">domínios</th><th>última coleta</th>
-    </tr></thead>
-    <tbody>{''.join(linha_cidade(c) for c in cidades)}</tbody>
-  </table></div>
-  <div class="legenda">
-    <span><i class="b-v"></i>venda</span><span><i class="b-l"></i>locação</span>
-  </div>
+    <section class="kpis">
+      {kpi("cidades-alvo", str(len(cidades)), "lista fechada")}
+      {kpi("com anúncio", str(coletando), f"de {len(cidades)}")}
+      {kpi("à venda", f"{total_v:,}")}
+      {kpi("para alugar", f"{total_l:,}")}
+      <div class="kpi{' kpi--acento' if problemas else ''}">
+        <span class="eyebrow">alertas</span>
+        <strong>{len(problemas)}</strong>
+        <span class="nota">{particoes} partições lidas</span>
+      </div>
+    </section>
 
-  {f'''<h2>Plataformas</h2>
-  <p class="nota">O que cada adapter trouxe. Partição é um dia de um domínio.</p>
-  <div class="caixa"><table>
-    <thead><tr><th>plataforma</th><th class="num">domínios</th>
-      <th class="num">partições</th><th class="num">linhas</th></tr></thead>
-    <tbody>{plataformas}</tbody>
-  </table></div>''' if plataformas else ''}
-</main>
+    <section class="cartao" id="saude">
+      <h2>Saúde da esteira</h2>
+      <p class="sub">Cada item diz o que está medido e, quando está ruim, o que
+      isso causa. Número sem leitura deixa o diagnóstico por conta de quem olha.</p>
+      <ul class="saude">{''.join(item_saude(i) for i in itens)}</ul>
+    </section>
 
-<footer class="env">
-  Gerado por <code>engenharia/painel.py</code> · lê o disco, não a API ·
-  não escreve no lago
-</footer>
+    <section class="cartao" id="cidades">
+      <h2>As {len(cidades)} cidades-alvo</h2>
+      <p class="sub">A lista é fechada: coleta acontece nestas e em mais nenhuma.
+      Cidade sem anúncio aparece apagada, e não sumida — o que falta coletar é
+      informação de operação tanto quanto o que já foi.</p>
+      <div class="rolagem"><table>
+        <thead><tr>
+          <th>cidade</th><th>estado</th><th class="num">venda</th>
+          <th class="num">locação</th><th>proporção</th>
+          <th class="num">domínios</th><th class="num">última coleta</th>
+        </tr></thead>
+        <tbody>{''.join(linha_cidade(c) for c in cidades)}</tbody>
+      </table></div>
+      <div class="legenda">
+        <span><i class="b-v"></i>venda</span><span><i class="b-l"></i>locação</span>
+      </div>
+    </section>
+
+    {f'''<section class="cartao" id="plataformas">
+      <h2>Plataformas</h2>
+      <p class="sub">O que cada adapter trouxe. Uma partição é um dia de um
+      domínio.</p>
+      <div class="rolagem"><table>
+        <thead><tr><th>plataforma</th><th class="num">domínios</th>
+          <th class="num">partições</th><th class="num">linhas</th>
+          <th>proporção</th></tr></thead>
+        <tbody>{plataformas}</tbody>
+      </table></div>
+    </section>''' if plataformas else ''}
+  </main>
+</div>
 </body></html>"""
 
 
