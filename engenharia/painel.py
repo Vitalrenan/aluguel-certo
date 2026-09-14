@@ -13,11 +13,14 @@ LÊ O DISCO, não a API. O painel existe justamente para responder "o que a
 coleta produziu", e perguntar isso ao serviço que consome a coleta mediria o
 consumo, não a produção.
 
-TRÊS PERGUNTAS, e o painel não responde outras:
+CINCO PERGUNTAS, e o painel não responde outras:
 
   1. Quais das quinze cidades-alvo já têm anúncio, e quantos
   2. Quantos de venda e quantos de locação, por cidade
-  3. Onde a esteira está quebrada -- camada vazia, mês sem coleta, campo que
+  3. Quantos imóveis por cidade EM CADA MÊS -- a série que a coleta mensal
+     existe para produzir, e que um total acumulado esconde
+  4. Que modelo existe por cidade, e quanto ele erra: RMSE e MAE em reais
+  5. Onde a esteira está quebrada -- camada vazia, mês sem coleta, campo que
      despencou de preenchimento
 
 O QUE ELE NÃO FAZ: não estima, não treina e não escreve no lago. Um painel que
@@ -38,7 +41,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from comum.cidades_alvo import CIDADES, Estado, alvo
+from comum.cidades_alvo import CIDADES, Estado
+from comum.cidades_alvo import alvo as alvo_cidade
 
 RAIZ = Path(__file__).resolve().parent
 SAIDA_PADRAO = RAIZ / "painel.html"
@@ -143,6 +147,82 @@ def saude(raiz: Path, bruto: pd.DataFrame, hist: pd.DataFrame,
     return itens
 
 
+def por_mes(hist: pd.DataFrame) -> tuple[list[str], list[dict]]:
+    """
+    Quantos imóveis por cidade, em cada mês de referência.
+
+    É a série que a coleta mensal existe para produzir, e o que a torna legível
+    é a comparação LADO A LADO: uma cidade que caiu de 6.500 para 400 num mês
+    tem problema de coleta, e isso não aparece num total acumulado.
+
+    Devolve (meses, linhas). Uma linha por par cidade × transação com algum
+    anúncio -- par sem nenhum não vira linha vazia, que só ocuparia a tela.
+    """
+    if not len(hist) or "mes_referencia" not in hist:
+        return [], []
+
+    meses = sorted(hist.mes_referencia.dropna().unique().tolist())
+    g = hist.groupby(["city", "transaction_type", "mes_referencia"]).size()
+
+    linhas: dict[tuple, dict] = {}
+    for (cidade, alvo, mes), n in g.items():
+        c = alvo_cidade(cidade)
+        if c is None:
+            continue
+        chave = (c.nome, c.uf, alvo)
+        linha = linhas.setdefault(chave, {
+            "cidade": c.nome, "uf": c.uf, "alvo": alvo,
+            "meses": dict.fromkeys(meses, 0), "total": 0})
+        linha["meses"][mes] += int(n)
+        linha["total"] += int(n)
+
+    ordenado = sorted(linhas.values(),
+                      key=lambda l: (-l["total"], l["cidade"], l["alvo"]))
+    return meses, ordenado
+
+
+def modelos_treinados(modelos: Path) -> list[dict]:
+    """
+    Um por model card: quem é, com quanto treinou, e quanto erra.
+
+    RMSE E MAE EM REAIS, não em log. O modelo é ajustado em `log(price)` e o
+    erro em log não diz nada a quem opera: `0,34` de RMSE logarítmico é
+    ilegível, `R$ 680 mil` não é.
+
+    Os dois juntos, e não um. O RMSE pune erro grande ao quadrado e o MAE não;
+    quando o RMSE é muito maior que o MAE, o modelo está errando pouco na maior
+    parte e muito em alguns -- e é essa distância que diz se o problema é viés
+    ou cauda.
+    """
+    linhas = []
+    for cartao_arq in sorted(modelos.glob("*/*/*/*/model_card.json")):
+        try:
+            c = json.loads(cartao_arq.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        ident = c.get("identificacao") or {}
+        escopo = c.get("escopo") or {}
+        d = c.get("desempenho") or {}
+        limites = (c.get("limites") or {}).get("faixa_de_preco") or {}
+        linhas.append({
+            "cidade": ident.get("cidade", "?"),
+            "alvo": ident.get("alvo", "?"),
+            "ano": ident.get("ano", ""), "mes": ident.get("mes", ""),
+            "versao": ident.get("versao", ""),
+            "escopo_treino": escopo.get("escopo_treino", "?"),
+            "n_treino": int(escopo.get("n_treino") or 0),
+            "n_holdout": int(escopo.get("n_holdout") or 0),
+            "rmse": d.get("rmse_brl"),
+            "mae": d.get("mae_brl"),
+            "erro_mediano": d.get("erro_mediano"),
+            "dentro_20pct": d.get("dentro_20pct"),
+            "cobertura": d.get("cobertura_intervalo"),
+            "faixa_p01": limites.get("p01"),
+            "faixa_p99": limites.get("p99"),
+        })
+    return sorted(linhas, key=lambda l: (l["cidade"], l["alvo"]))
+
+
 def por_cidade(hist: pd.DataFrame, bruto: pd.DataFrame) -> list[dict]:
     """Uma linha por cidade-alvo, coletada ou não."""
     venda = locacao = {}
@@ -161,7 +241,7 @@ def por_cidade(hist: pd.DataFrame, bruto: pd.DataFrame) -> list[dict]:
                      include_groups=False).to_dict() if len(bruto) else {})
 
     def casa(nome_hist: str) -> str | None:
-        c = alvo(nome_hist)
+        c = alvo_cidade(nome_hist)
         return c.slug if c else None
 
     v_slug, l_slug = defaultdict(int), defaultdict(int)
@@ -217,7 +297,8 @@ def _barra(n: int, teto: int, largura: int = 132) -> float:
 
 
 def desenha(cidades: list[dict], itens: list[dict], bruto: pd.DataFrame,
-            hist: pd.DataFrame) -> str:
+            hist: pd.DataFrame, meses: list[str], serie: list[dict],
+            modelos: list[dict]) -> str:
     e = html.escape
     agora = datetime.now().strftime("%d/%m/%Y às %H:%M")
     teto = max([c["venda"] + c["locacao"] for c in cidades] + [1])
@@ -273,6 +354,48 @@ def desenha(cidades: list[dict], itens: list[dict], bruto: pd.DataFrame,
               <td class="prop"><span class="trilho"><i class="b-v"
                  style="width:{_barra(int(r.linhas), teto_p)}px"></i></span></td>
             </tr>""" for p, r in g.iterrows())
+
+
+    # O rotulo e para ler, o valor e para casar. `locacao` sem cedilha e a
+    # chave do dado; quem le a tela nao tem por que ver a chave.
+    ROTULO_ALVO = {"venda": "venda", "locacao": "locação"}
+
+    # --- imoveis por cidade a cada mes ------------------------------------
+    cabecalho_meses = "".join(
+        f'<th class="num">{e(m)}</th>' for m in meses)
+
+    def celula_mes(v: int) -> str:
+        # Vazio e mes SEM anuncio daquele par, e nao zero medido. Escrever `0`
+        # afirmaria que coletamos e nao achamos nada, que e outra coisa.
+        return f'<td class="num">{v:,}</td>' if v else '<td class="num vaz">—</td>'
+
+    linhas_serie = "".join(f"""
+        <tr>
+          <td><span class="cid">{e(l['cidade'])}</span><span class="uf">{e(l['uf'])}</span></td>
+          <td><span class="pilula pilula--{e(l['alvo'])}">{e(ROTULO_ALVO.get(l['alvo'], l['alvo']))}</span></td>
+          {''.join(celula_mes(l['meses'][m]) for m in meses)}
+          <td class="num forte">{l['total']:,}</td>
+        </tr>""" for l in serie)
+
+    # --- modelos ----------------------------------------------------------
+    def brl(v) -> str:
+        return "—" if v is None else f"R$ {v:,.0f}".replace(",", ".")
+
+    def pct(v) -> str:
+        return "—" if v is None else f"{v:.1%}".replace(".", ",")
+
+    linhas_modelos = "".join(f"""
+        <tr>
+          <td><span class="cid">{e(m['cidade'])}</span></td>
+          <td><span class="pilula pilula--{e(m['alvo'])}">{e(ROTULO_ALVO.get(m['alvo'], m['alvo']))}</span></td>
+          <td class="soft mono-min">{e(m['versao'])}</td>
+          <td class="num">{m['n_treino']:,}</td>
+          <td class="num soft">{m['n_holdout']:,}</td>
+          <td class="num forte">{brl(m['rmse'])}</td>
+          <td class="num forte">{brl(m['mae'])}</td>
+          <td class="num soft">{pct(m['erro_mediano'])}</td>
+          <td class="num soft">{pct(m['dentro_20pct'])}</td>
+        </tr>""" for m in modelos)
 
     def kpi(rotulo: str, valor: str, nota: str = "") -> str:
         return f"""<div class="kpi">
@@ -407,6 +530,13 @@ tr.vazia td{{color:var(--ink-faint)}}
   border-radius:var(--r-pill);background:var(--surface-mute);
   color:var(--ink-soft);white-space:nowrap}}
 .pilula--coletando{{background:var(--brand-soft);color:var(--brand)}}
+.pilula--venda{{background:var(--brand-soft);color:var(--brand)}}
+.pilula--locacao{{background:var(--ciano-soft);color:var(--ciano)}}
+.forte{{color:var(--ink);font-weight:500}}
+.vaz{{color:var(--ink-faint)}}
+.mono-min{{font-family:ui-monospace,Menlo,monospace;font-size:12px}}
+.roda-tab{{margin:14px 0 0;font-size:13px;color:var(--ink-faint);max-width:74ch}}
+.roda-tab b{{color:var(--ink-soft)}}
 .legenda{{display:flex;gap:20px;font-size:12.5px;color:var(--ink-soft);
   padding-top:14px}}
 .legenda i{{display:inline-block;width:18px;height:8px;border-radius:99px;
@@ -431,6 +561,8 @@ tr.vazia td{{color:var(--ink-faint)}}
         <a class="on" href="#"><i></i>Coleta</a>
         <a href="#saude"><i></i>Saúde da esteira</a>
         <a href="#cidades"><i></i>Cidades-alvo</a>
+        {'<a href="#serie"><i></i>Imóveis por mês</a>' if serie else ''}
+        {'<a href="#modelos"><i></i>Modelos</a>' if modelos else ''}
         {'<a href="#plataformas"><i></i>Plataformas</a>' if plataformas else ''}
       </div>
     </nav>
@@ -494,6 +626,44 @@ tr.vazia td{{color:var(--ink-faint)}}
         <tbody>{plataformas}</tbody>
       </table></div>
     </section>''' if plataformas else ''}
+    {f'''<section class="cartao" id="serie">
+      <h2>Imóveis por cidade, a cada mês</h2>
+      <p class="sub">A série que a coleta mensal existe para produzir. Lado a
+      lado, e não somada: cidade que cai de milhares para centenas num mês tem
+      problema de coleta, e isso some num total acumulado.</p>
+      <div class="rolagem"><table>
+        <thead><tr>
+          <th>cidade</th><th>transação</th>
+          {cabecalho_meses}
+          <th class="num">total</th>
+        </tr></thead>
+        <tbody>{linhas_serie}</tbody>
+      </table></div>
+      <p class="roda-tab">Célula vazia é mês sem anúncio daquele par, e não zero
+      medido. Os dois estados são diferentes: um diz que não coletamos, o outro
+      diria que coletamos e não achou nada.</p>
+    </section>''' if serie else ''}
+
+    {f'''<section class="cartao" id="modelos">
+      <h2>Modelos por cidade</h2>
+      <p class="sub">Um por par cidade × transação, com o erro medido no holdout
+      — a fatia que o treino nunca viu, tocada uma vez só.</p>
+      <div class="rolagem"><table>
+        <thead><tr>
+          <th>cidade</th><th>transação</th><th>versão</th>
+          <th class="num">treino</th><th class="num">holdout</th>
+          <th class="num">RMSE</th><th class="num">MAE</th>
+          <th class="num">erro mediano</th><th class="num">dentro de 20%</th>
+        </tr></thead>
+        <tbody>{linhas_modelos}</tbody>
+      </table></div>
+      <p class="roda-tab"><b>RMSE e MAE em reais, não em log.</b> O modelo é
+      ajustado em logaritmo do preço, e erro em log é ilegível para quem opera.
+      Os dois juntos porque o RMSE pune erro grande ao quadrado e o MAE não:
+      quando o RMSE é muito maior, o modelo erra pouco na maioria e muito em
+      alguns, e é essa distância que separa viés de cauda.</p>
+    </section>''' if modelos else ''}
+
   </main>
 </div>
 </body></html>"""
@@ -518,9 +688,13 @@ def main(argv=None) -> int:
     hist = le_historico(dados)
     itens = saude(dados, bruto, hist, Path(args.modelos))
     cidades = por_cidade(hist, bruto)
+    meses, serie = por_mes(hist)
+    modelos = modelos_treinados(Path(args.modelos))
 
     alvo_arq = Path(args.saida)
-    alvo_arq.write_text(desenha(cidades, itens, bruto, hist), encoding="utf-8")
+    alvo_arq.write_text(
+        desenha(cidades, itens, bruto, hist, meses, serie, modelos),
+        encoding="utf-8")
 
     problemas = [i for i in itens if not i["ok"]]
     print(f"painel: {alvo_arq}")
