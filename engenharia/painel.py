@@ -290,8 +290,17 @@ def desenha(cidades: list[dict], itens: list[dict], bruto: pd.DataFrame,
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
 <style>
 /* Tokens de frontend/app/globals.css. Fonte única -- um segundo conjunto aqui
-   divergiria do produto na primeira mudança de paleta. */
+   divergiria do produto na primeira mudança de paleta.
+
+   CLARO POR DECISÃO, e não por falta de tema escuro. A referência do
+   design-system.md é branca e silenciosa, e o efeito depende disso: a cor
+   aparece em quatro lugares, e saturar o resto o destrói.
+
+   `color-scheme: light` impede o navegador de escurecer barra de rolagem e
+   controle nativo quando o sistema está no escuro -- sem isso a página fica
+   clara com a rolagem preta, que é pior que qualquer um dos dois temas. */
 :root {{
+  color-scheme: light;
   --canvas:#EFF3FA; --surface:#FFFFFF; --surface-mute:#F5F8FD;
   --ink:#15203B; --ink-soft:#586686; --ink-faint:#93A0BC;
   --brand:#2563EB; --brand-soft:#E7EEFD; --brand-escuro:#1B3FA8;
@@ -301,16 +310,6 @@ def desenha(cidades: list[dict], itens: list[dict], bruto: pd.DataFrame,
   --sombra-card:0 1px 2px rgb(17 24 39/.04), 0 8px 24px -8px rgb(17 24 39/.08);
   --sombra-float:0 2px 4px rgb(17 24 39/.06), 0 16px 40px -12px rgb(17 24 39/.16);
 }}
-@media (prefers-color-scheme:dark) {{
-  :root {{
-    --canvas:#0A1120; --surface:#131D31; --surface-mute:#18233C;
-    --ink:#E5EBF7; --ink-soft:#9FACC8; --ink-faint:#6C7B9A;
-    --brand:#5F91F2; --brand-soft:#1A2A49; --brand-escuro:#9CBCF9;
-    --ciano:#3CBCD9; --ciano-soft:#0F2F3C; --linha:#24314C;
-    --sombra-card:0 1px 2px rgb(0 0 0/.3), 0 8px 24px -8px rgb(0 0 0/.5);
-    --sombra-float:0 2px 4px rgb(0 0 0/.35), 0 16px 40px -12px rgb(0 0 0/.6);
-  }}
-}}
 *,*::before,*::after{{box-sizing:border-box}}
 body{{margin:0;background:var(--canvas);color:var(--ink);
   font:400 15px/1.6 Inter,ui-sans-serif,system-ui,sans-serif;
@@ -319,7 +318,10 @@ body{{margin:0;background:var(--canvas);color:var(--ink);
 :focus-visible{{outline:2.5px solid var(--brand);outline-offset:3px;border-radius:8px}}
 
 /* -------- leiaute: sidebar 240px + conteúdo, gutter 24, gap 16 -------- */
-.app{{display:grid;grid-template-columns:240px 1fr;min-height:100vh}}
+/* `minmax(0,1fr)` e nao `1fr`. Item de grid tem `min-width:auto`, entao o
+   conteudo mais largo empurra a coluna alem da fracao e a pagina inteira passa
+   a rolar de lado -- com a sidebar acompanhando, que e o pior sintoma. */
+.app{{display:grid;grid-template-columns:240px minmax(0,1fr);min-height:100vh}}
 .lado{{background:var(--surface);border-right:1px solid var(--linha);
   padding:22px 16px;display:flex;flex-direction:column;gap:26px}}
 .marca{{display:flex;align-items:center;gap:11px;padding:0 6px}}
@@ -344,7 +346,7 @@ body{{margin:0;background:var(--canvas);color:var(--ink);
 .lado footer{{margin-top:auto;font-size:11.5px;color:var(--ink-faint);
   line-height:1.55;padding:0 6px}}
 
-main{{padding:26px 24px 40px;max-width:1180px}}
+main{{padding:26px 24px 40px;max-width:1180px;min-width:0}}
 .topo{{margin-bottom:20px}}
 .topo h1{{margin:6px 0 4px;font-size:26px;font-weight:600;letter-spacing:-.02em}}
 .topo p{{margin:0;color:var(--ink-soft);font-size:14px}}
