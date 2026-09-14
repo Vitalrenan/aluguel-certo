@@ -404,7 +404,34 @@ def grava(art: Artefato, destino: Path, metadados: dict) -> Path:
         json.dumps(art.categorias, ensure_ascii=False, indent=2), encoding="utf-8")
     (parcial / "metadados.json").write_text(
         json.dumps(metadados, ensure_ascii=False, indent=2), encoding="utf-8")
-    parcial.rename(destino)
+
+    # TROCA EM DOIS PASSOS, e não um `rename` direto.
+    #
+    # No Windows, renomear sobre diretório que já existe levanta
+    # `FileExistsError` -- diferente do POSIX, que substitui. Com o caminho
+    # `{ano}/{mes}/{cidade}/{alvo}`, retreinar o mesmo par no mesmo mês cai
+    # sempre nesse caso, e o treino inteiro se perdia no último passo.
+    #
+    # Apagar o destino antes de renomear resolveria e deixaria uma janela sem
+    # modelo nenhum no disco. Mover para o lado primeiro mantém um artefato
+    # válido em todo instante menos o do próprio rename.
+    import shutil
+
+    velho = destino.with_name(destino.name + ".velho")
+    if velho.exists():
+        shutil.rmtree(velho)
+    trocado = False
+    if destino.exists():
+        destino.rename(velho)
+        trocado = True
+    try:
+        parcial.rename(destino)
+    except Exception:
+        if trocado:
+            velho.rename(destino)      # devolve o que estava servindo
+        raise
+    if trocado:
+        shutil.rmtree(velho, ignore_errors=True)
     return destino
 
 

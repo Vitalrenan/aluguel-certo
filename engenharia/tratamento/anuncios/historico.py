@@ -51,7 +51,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from comum import schema
+from comum import cidades_alvo, schema
 from tratamento.anuncios import particoes
 
 RAW_PADRAO = "dados/01_raw/listings"
@@ -147,6 +147,21 @@ def constroi_mes(raiz: str | Path, mes: str) -> tuple[pd.DataFrame, dict]:
     colunas = sorted(set().union(*(p.columns for p in partes)))
     partes = [p.reindex(columns=colunas) for p in partes]
     todo = pd.concat(partes, ignore_index=True)
+
+    # A LISTA DE CIDADES-ALVO VALE AQUI TAMBEM, e nao so na ingestao.
+    #
+    # O portao do normalizador bloqueia coleta NOVA. As particoes ja gravadas
+    # continuam no lago com o que foi coletado antes da regra, e sem este
+    # filtro elas seguiriam alimentando tabela, ABT e modelo -- a regra valeria
+    # para o futuro e nao para o que se reprocessa, que e a metade que sobe
+    # para producao.
+    if "city" in todo.columns:
+        antes = len(todo)
+        todo = todo[todo.city.map(
+            lambda c: cidades_alvo.esta_no_alvo(c) if pd.notna(c) else False)]
+        if antes != len(todo):
+            log_fora = antes - len(todo)
+            print(f"  {log_fora} linha(s) de cidade fora do alvo, descartadas")
 
     # Um imovel anunciado por duas agencias no MESMO mes e uma linha. O
     # `property_id` e sha1(dominio|listing_id), entao a repeticao aqui e entre
